@@ -8,7 +8,7 @@ const router = Router();
 router.post(
   "/log",
   requireAuth,
-  requireRole(["TEACHER", "ADMIN", "MUALLIM", "SADHR_MUALLIM"]),
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
   hifzController.logProgress
 );
 

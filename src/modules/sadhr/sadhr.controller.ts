@@ -5,6 +5,10 @@ import {
   validateAnnouncementInput,
   validateCreateMuallimInput,
   validateUpdateMuallimInput,
+  validateCreateParentInput,
+  validateUpdateParentInput,
+  validateCreateClassInput,
+  validateUpdateClassInput,
 } from "./sadhr.validators.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 
@@ -264,6 +268,206 @@ export class SadhrController {
       success: true,
       message: result.message,
       data: result.archivedRecord,
+    });
+  });
+
+  /**
+   * ==========================================
+   * Parent Management Controller Endpoints
+   * ==========================================
+   */
+
+  /**
+   * Register a new Parent / Guardian account
+   */
+  createParent = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const validation = validateCreateParentInput(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    const parent = await sadhrService.createParent(req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: `Parent ${parent.name} registered successfully`,
+      data: parent,
+    });
+  });
+
+  /**
+   * Get all registered parents
+   */
+  getAllParents = asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+    const parents = await sadhrService.getAllParents();
+    return res.status(200).json({
+      success: true,
+      data: parents,
+    });
+  });
+
+  /**
+   * Get single Parent details
+   */
+  getParentById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent ID is required",
+      });
+    }
+
+    const parent = await sadhrService.getParentById(id);
+    return res.status(200).json({
+      success: true,
+      data: parent,
+    });
+  });
+
+  /**
+   * Update Parent details
+   */
+  updateParent = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent ID is required",
+      });
+    }
+
+    const validation = validateUpdateParentInput(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    const updatedParent = await sadhrService.updateParent(id, req.body);
+    return res.status(200).json({
+      success: true,
+      message: `Parent ${updatedParent.name} updated successfully`,
+      data: updatedParent,
+    });
+  });
+
+  /**
+   * Soft delete and archive Parent
+   */
+  deleteParent = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent ID is required",
+      });
+    }
+
+    const deletedBy = req.user?.id || req.user?.name || "sadhr-muallim";
+    const reason = req.body?.reason;
+
+    const result = await sadhrService.deleteParent(id, deletedBy, reason);
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.archivedRecord,
+    });
+  });
+
+  /**
+   * ==========================================
+   * Class Management Controller Endpoints
+   * ==========================================
+   */
+
+  /**
+   * Create a new Madrasa Class
+   */
+  createClass = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const validation = validateCreateClassInput(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    const newClass = await sadhrService.createClass(req.body);
+    return res.status(201).json({
+      success: true,
+      message: `Class ${newClass.name} created successfully`,
+      data: newClass,
+    });
+  });
+
+  /**
+   * Get single Class details
+   */
+  getClassById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Class ID is required",
+      });
+    }
+
+    const classDoc = await sadhrService.getClassById(id);
+    return res.status(200).json({
+      success: true,
+      data: classDoc,
+    });
+  });
+
+  /**
+   * Update Class details
+   */
+  updateClass = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Class ID is required",
+      });
+    }
+
+    const validation = validateUpdateClassInput(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    const updatedClass = await sadhrService.updateClass(id, req.body);
+    return res.status(200).json({
+      success: true,
+      message: `Class ${updatedClass.name} updated successfully`,
+      data: updatedClass,
+    });
+  });
+
+  /**
+   * Delete Class
+   */
+  deleteClass = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Class ID is required",
+      });
+    }
+
+    const result = await sadhrService.deleteClass(id);
+    return res.status(200).json({
+      success: true,
+      message: result.message,
     });
   });
 }

@@ -4,7 +4,7 @@ import { requireAuth, requireRole } from "../auth/auth.middleware.js";
 
 const router = Router();
 
-const facultyRoles = ["TEACHER", "MUALLIM", "ADMIN", "SADHR_MUALLIM"];
+const facultyRoles = ["MUALLIM", "SADHR_MUALLIM"];
 
 /**
  * Muallim Dashboard & Classroom

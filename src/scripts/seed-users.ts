@@ -49,6 +49,17 @@ const SEED_USERS = [
     assignedClasses: JSON.stringify(["4", "5", "7"]),
     assignedSubjects: JSON.stringify(["Arabic", "Islamic Studies"]),
   },
+  {
+    name: "Ali Mundambra",
+    email: "ali.mundambra@gmail.com",
+    phone: "9847123456",
+    password: "123456",
+    role: "PARENT" as const,
+    isActive: true,
+    designation: "Parent / Guardian",
+    assignedClasses: JSON.stringify([]),
+    assignedSubjects: JSON.stringify([]),
+  },
 ];
 
 async function seed() {
@@ -81,7 +92,7 @@ async function seed() {
             password: userData.password,
             name: userData.name,
             username: userData.phone,
-            role: userData.role === "SADHR_MUALLIM" ? "ADMIN" : "TEACHER",
+            role: userData.role,
             phone: userData.phone,
             designation: userData.designation,
             madrasaName: "Darunnajath Mundambra",

@@ -119,4 +119,78 @@ export interface PaginatedStudentResultDTO {
   };
 }
 
+/**
+ * Parent Management DTOs
+ */
+export interface CreateParentDTO {
+  name: string;
+  phone: string;
+  email?: string;
+  password?: string;
+}
+
+export interface UpdateParentDTO {
+  name?: string;
+  phone?: string;
+  email?: string;
+  password?: string;
+  isActive?: boolean;
+}
+
+export interface ParentResponseDTO {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  password?: string;
+  role: "PARENT";
+  studentIds: string[];
+  children?: {
+    id: string;
+    name: string;
+    admissionNumber: string;
+    className: string;
+    classDivision?: string;
+  }[];
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Class Management DTOs
+ */
+export interface CreateClassDTO {
+  name: string;
+  division?: string;
+  classTeacherId?: string;
+  academicYearId?: string;
+  capacity?: number;
+}
+
+export interface UpdateClassDTO {
+  name?: string;
+  division?: string;
+  classTeacherId?: string;
+  academicYearId?: string;
+  capacity?: number;
+  isActive?: boolean;
+}
+
+export interface ClassResponseDTO {
+  id: string;
+  name: string;
+  division?: string;
+  classTeacherId?: string;
+  classTeacherName?: string;
+  classTeacherPhone?: string;
+  studentCount: number;
+  averageAttendance: number;
+  averageProgress: number;
+  capacity?: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 

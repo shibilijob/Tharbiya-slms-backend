@@ -38,24 +38,52 @@ app.use(
 
 app.use(morgan("dev"));
 
-// 1. Mount Better Auth handler BEFORE express.json()
-app.all("/api/auth/*splat", toNodeHandler(auth));
-
-// 2. Express body parsers
+// 1. Express body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. Attach user session to request
+// 2. Attach user session to request
 app.use(authenticate);
 
-// 4. Mount Modular API Routes
+import User from "./models/User.js";
+
+// 3. Mount Modular API Routes
 app.use("/api/auth", authRoutes);
+app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/hifz", hifzRoutes);
 app.use("/api/practical", practicalRoutes);
 app.use("/api/sadhr", sadhrRoutes);
 app.use("/api/muallim", muallimRoutes);
 app.use("/api/parent", parentRoutes);
+
+// Public faculty directory for syncing assigned classes
+app.get("/api/faculty-members", async (_req, res) => {
+  try {
+    const teachers = await User.find({
+      role: { $in: ["MUALLIM", "SADHR_MUALLIM"] },
+      isActive: true,
+    }).select("-password");
+
+    const mapped = teachers.map((t) => ({
+      id: t._id.toString(),
+      name: t.name,
+      phone: t.phone,
+      email: t.email,
+      role: t.role,
+      designation: t.designation || (t.role === "SADHR_MUALLIM" ? "Sadhr Muallim" : "Muallim"),
+      assignedClasses: t.assignedClasses || [],
+      assignedSubjects: t.assignedSubjects || [],
+    }));
+
+    return res.json({
+      success: true,
+      data: mapped,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err?.message });
+  }
+});
 
 // Public health check endpoint
 app.get("/", (_req, res) => {

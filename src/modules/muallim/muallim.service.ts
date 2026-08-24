@@ -354,10 +354,6 @@ export class MuallimService {
       }
     }
 
-    if (classes.length === 0) {
-      classes = await Class.find({ isActive: true }).limit(2);
-    }
-
     return classes;
   }
 
@@ -405,7 +401,7 @@ export class MuallimService {
 
     return {
       assignedClassesCount: assignedClasses.length,
-      totalAssignedStudents: totalStudents || 32,
+      totalAssignedStudents: totalStudents,
       todayAttendanceMarked: todayAttendanceCount > 0,
       todayAttendancePercentage: 96.5,
       recentHifzLogsCount,
