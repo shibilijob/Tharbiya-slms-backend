@@ -26,19 +26,60 @@ export interface AuthenticatedRequest extends Request {
   session?: any;
 }
 
+import User from "../../models/User.js";
+import { Types } from "mongoose";
+
 export const authenticate = async (
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
 ) => {
   try {
+    // 1. Check Better Auth session
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
     });
 
-    if (session) {
+    if (session && session.user) {
       req.user = session.user as unknown as AuthenticatedUser;
       req.session = session.session;
+      return next();
+    }
+
+    // 2. Check Bearer token or custom auth headers
+    const authHeader = req.headers.authorization || (req.headers["x-auth-token"] as string);
+    if (authHeader) {
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      let userId: string | null = null;
+
+      if (token.startsWith("sess_")) {
+        const parts = token.split("_");
+        if (parts.length >= 2 && parts[1] && Types.ObjectId.isValid(parts[1])) {
+          userId = parts[1];
+        }
+      } else if (Types.ObjectId.isValid(token)) {
+        userId = token;
+      }
+
+      if (userId) {
+        const user = await User.findById(userId);
+        if (user && user.isActive) {
+          req.user = {
+            id: user._id.toString(),
+            name: user.name,
+            email: user.email || "",
+            phone: user.phone,
+            role: user.role,
+            designation: user.designation || undefined,
+            assignedClasses: JSON.stringify(user.assignedClasses || []),
+            assignedSubjects: JSON.stringify(user.assignedSubjects || []),
+            emailVerified: true,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+          } as AuthenticatedUser;
+          req.session = { token, user: req.user };
+        }
+      }
     }
   } catch (error) {
     console.error("Auth middleware error:", error);
@@ -51,20 +92,60 @@ export const requireAuth = asyncHandler(async (
   res: Response,
   next: NextFunction
 ) => {
-  const session = await auth.api.getSession({
-    headers: fromNodeHeaders(req.headers),
-  });
-
-  if (!session || !session.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Unauthorized: Please log in to continue.",
+  // 1. Check Better Auth session
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
     });
+
+    if (session && session.user) {
+      req.user = session.user as unknown as AuthenticatedUser;
+      req.session = session.session;
+      return next();
+    }
+  } catch {}
+
+  // 2. Check Bearer token or custom auth headers
+  const authHeader = req.headers.authorization || (req.headers["x-auth-token"] as string);
+  if (authHeader) {
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    let userId: string | null = null;
+
+    if (token.startsWith("sess_")) {
+      const parts = token.split("_");
+      if (parts.length >= 2 && parts[1] && Types.ObjectId.isValid(parts[1])) {
+        userId = parts[1];
+      }
+    } else if (Types.ObjectId.isValid(token)) {
+      userId = token;
+    }
+
+    if (userId) {
+      const user = await User.findById(userId);
+      if (user && user.isActive) {
+        req.user = {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email || "",
+          phone: user.phone,
+          role: user.role,
+          designation: user.designation || undefined,
+          assignedClasses: JSON.stringify(user.assignedClasses || []),
+          assignedSubjects: JSON.stringify(user.assignedSubjects || []),
+          emailVerified: true,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        } as AuthenticatedUser;
+        req.session = { token, user: req.user };
+        return next();
+      }
+    }
   }
 
-  req.user = session.user as unknown as AuthenticatedUser;
-  req.session = session.session;
-  next();
+  return res.status(401).json({
+    success: false,
+    message: "Unauthorized: Please log in to continue.",
+  });
 });
 
 export const requireRole = (allowedRoles: string[]) => {

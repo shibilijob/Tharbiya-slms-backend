@@ -36,8 +36,26 @@ export class AuthService {
    */
   private async authenticateSession(user: IUser, password?: string): Promise<any> {
     let session: any = null;
-    const pwd = password || user.password;
+    const pwd = password?.trim();
 
+    if (!pwd) {
+      throw new AppError("Password is required.", 400);
+    }
+
+    // 1. Check direct password match against Mongoose record
+    if (user.password && user.password === pwd) {
+      return {
+        token: `sess_${user._id}_${Date.now()}`,
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      };
+    }
+
+    // 2. Try Better Auth authentication
     try {
       if (user.email) {
         session = await auth.api.signInEmail({
@@ -54,21 +72,12 @@ export class AuthService {
           },
         });
       }
-    } catch (err: any) {
-      // If Better Auth sign-in fails but password matches Mongoose record
-      if (user.password && user.password === pwd) {
-        session = {
-          token: `sess_${user._id}_${Date.now()}`,
-          user: {
-            id: user._id.toString(),
-            name: user.name,
-            email: user.email,
-            role: user.role,
-          },
-        };
-      } else {
-        throw new AppError(err?.message || "Invalid credentials: Incorrect password.", 401);
-      }
+    } catch {
+      throw new AppError("Invalid credentials: Incorrect password.", 401);
+    }
+
+    if (!session) {
+      throw new AppError("Invalid credentials: Incorrect password.", 401);
     }
 
     return session;
@@ -82,17 +91,19 @@ export class AuthService {
     data: StaffLoginDTO,
     expectedRole?: UserRole
   ): Promise<AuthLoginResponse<StaffAuthPayload>> {
-    const email = (data.email || data.identifier)?.trim()?.toLowerCase();
+    const rawIdentifier = (data.email || (data as any).phone || data.identifier)?.trim();
     const password = data.password;
 
-    if (!email) {
-      throw new AppError("Staff email address is required.", 400);
+    if (!rawIdentifier) {
+      throw new AppError("Staff email or phone number is required.", 400);
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({
+      $or: [{ email: rawIdentifier.toLowerCase() }, { phone: rawIdentifier }],
+    });
 
     if (!user) {
-      throw new AppError("Invalid credentials: No staff account found with this email.", 401);
+      throw new AppError("Invalid credentials: No staff account found.", 401);
     }
 
     if (!user.isActive) {
@@ -107,12 +118,10 @@ export class AuthService {
       );
     }
 
-    // Check specific role requirement if enforced
-    const targetRole = expectedRole || data.role;
-    if (targetRole && user.role !== targetRole) {
-      const roleLabel = targetRole === "SADHR_MUALLIM" ? "Sadhr Muallim" : "Muallim";
+    // If specific Sadhr Muallim endpoint is accessed, require SADHR_MUALLIM role
+    if (expectedRole === "SADHR_MUALLIM" && user.role !== "SADHR_MUALLIM") {
       throw new AppError(
-        `Access restricted: ${roleLabel} administrative privileges required. Account role is ${user.role}.`,
+        `Access restricted: Sadhr Muallim administrative privileges required. Account role is ${user.role}.`,
         403
       );
     }
@@ -138,14 +147,27 @@ export class AuthService {
       };
     } else {
       // MUALLIM (Teacher)
-      const teacherClasses = await Class.find({ classTeacherId: user._id, isActive: true });
-      let assignedClasses = teacherClasses.map((c) => c.name.replace(/^Class\s*/i, "").trim() || c.name);
+      let assignedClasses: string[] = [];
 
-      if (assignedClasses.length === 0) {
-        assignedClasses = ["5", "6"];
+      // 1. Check user's assignedClasses or assignedClass on user document
+      if (user.assignedClasses && Array.isArray(user.assignedClasses) && user.assignedClasses.length > 0) {
+        assignedClasses = user.assignedClasses.map(c => String(c).replace(/^Class\s*/i, "").trim());
+      } else if ((user as any).assignedClass) {
+        const single = String((user as any).assignedClass).replace(/^Class\s*/i, "").trim();
+        if (single) assignedClasses = [single];
       }
 
-      const assignedSubjects = ["Quran", "Hifz", "Tajweed", "Fiqh", "Akhlaq"];
+      // 2. Lookup Class collection if not explicitly stored on user
+      if (assignedClasses.length === 0) {
+        const teacherClasses = await Class.find({ classTeacherId: user._id, isActive: true });
+        if (teacherClasses.length > 0) {
+          assignedClasses = teacherClasses.map((c) => c.name.replace(/^Class\s*/i, "").trim() || c.name);
+        }
+      }
+
+      const assignedSubjects = user.assignedSubjects && user.assignedSubjects.length > 0
+        ? user.assignedSubjects
+        : ["Quran", "Hifz", "Tajweed", "Fiqh", "Akhlaq"];
 
       userPayload = {
         id: user._id.toString(),
@@ -264,7 +286,7 @@ export class AuthService {
 
     // If specific role requested, route accordingly
     if (data.role === "SADHR_MUALLIM" || data.role === "MUALLIM") {
-      return this.loginStaff({ email: (data.email || identifier)!, password: data.password }, data.role);
+      return this.loginStaff({ email: (data.email || identifier)!, password: data.password });
     }
     if (data.role === "PARENT") {
       return this.loginParent({ phone: (data.phone || identifier)!, password: data.password });
@@ -308,12 +330,7 @@ export class AuthService {
           password: data.password,
           name: data.name.trim(),
           username: data.phone.trim(),
-          role:
-            data.role === "SADHR_MUALLIM"
-              ? "ADMIN"
-              : data.role === "MUALLIM"
-              ? "TEACHER"
-              : "PARENT",
+          role: data.role || "PARENT",
           phone: data.phone.trim(),
           designation: data.designation || "",
           madrasaName: DEFAULT_MADRASA_NAME,

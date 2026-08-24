@@ -30,11 +30,11 @@ router.get("/me", authController.getMe);
 router.post(
   "/register",
   requireAuth,
-  requireRole(["ADMIN", "SADHR_MUALLIM"]),
+  requireRole(["SADHR_MUALLIM"]),
   authController.register
 );
 
 // Get list of teachers and sadhr muallim
-router.get("/faculty", requireAuth, authController.getFaculty);
+router.get("/faculty", authController.getFaculty);
 
 export default router;

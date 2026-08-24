@@ -12,12 +12,51 @@ router.get(
   sadhrController.getDashboardStats
 );
 
-// All classes overview (Sadhr Muallim & Teachers)
+// All classes overview (Sadhr Muallim)
 router.get(
   "/classes",
   requireAuth,
   requireRole(["SADHR_MUALLIM"]),
   sadhrController.getAllClasses
+);
+
+// Create Class (Sadhr Muallim)
+router.post(
+  "/classes",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.createClass
+);
+
+// Get single Class by ID
+router.get(
+  "/classes/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.getClassById
+);
+
+// Update Class
+router.patch(
+  "/classes/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.updateClass
+);
+
+router.put(
+  "/classes/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.updateClass
+);
+
+// Delete Class
+router.delete(
+  "/classes/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.deleteClass
 );
 
 // Publish announcement (Sadhr Muallim only)
@@ -29,6 +68,13 @@ router.post(
 );
 
 // create student
+router.post(
+  "/students",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.addStudent
+);
+
 router.post(
   "/addStudent",
   sadhrController.addStudent
@@ -54,7 +100,7 @@ router.patch(
 router.delete(
   "/students/:id",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.deleteStudent
 );
 
@@ -66,14 +112,14 @@ router.delete(
 router.post(
   "/muallims",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.createMuallim
 );
 
 router.post(
   "/addMuallim",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.createMuallim
 );
 
@@ -81,7 +127,7 @@ router.post(
 router.get(
   "/muallims",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.getAllMuallims
 );
 
@@ -89,7 +135,7 @@ router.get(
 router.get(
   "/muallims/:id",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.getMuallimById
 );
 
@@ -97,14 +143,14 @@ router.get(
 router.patch(
   "/muallims/:id",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.updateMuallim
 );
 
 router.put(
   "/muallims/:id",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.updateMuallim
 );
 
@@ -112,8 +158,59 @@ router.put(
 router.delete(
   "/muallims/:id",
   requireAuth,
-  requireRole(["SADHR_MUALLIM", "ADMIN"]),
+  requireRole(["SADHR_MUALLIM"]),
   sadhrController.deleteMuallim
+);
+
+/**
+ * Parent & Guardian Management Endpoints
+ */
+
+// Register new Parent
+router.post(
+  "/parents",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.createParent
+);
+
+// Get all Parents
+router.get(
+  "/parents",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.getAllParents
+);
+
+// Get single Parent by ID
+router.get(
+  "/parents/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.getParentById
+);
+
+// Update Parent
+router.patch(
+  "/parents/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.updateParent
+);
+
+router.put(
+  "/parents/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.updateParent
+);
+
+// Soft delete + archive Parent
+router.delete(
+  "/parents/:id",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.deleteParent
 );
 
 export default router;

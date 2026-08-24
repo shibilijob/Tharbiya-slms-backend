@@ -10,6 +10,7 @@ const db = mongoClient.db();
 export const auth = betterAuth({
   database: mongodbAdapter(db, {
     client: mongoClient,
+    transaction: false,
   }),
   secret:
     process.env.BETTER_AUTH_SECRET ||
