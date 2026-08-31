@@ -17,7 +17,9 @@ export const auth = betterAuth({
     "tharbiya_madrasa_super_secure_secret_key_2026_jwt_auth_production_development",
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
   trustedOrigins: [
-    process.env.CLIENT_URL || "http://localhost:5173",
+    process.env.CLIENT_URL ||
+    "https://tharbiya-slms-frontend.vercel.app",
+    "https://tharbiya-slms-backend.onrender.com",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
   ],
@@ -28,14 +30,23 @@ export const auth = betterAuth({
   },
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
-        socialProviders: {
-          google: {
-            clientId: process.env.GOOGLE_CLIENT_ID,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-          },
+      socialProviders: {
+        google: {
+          clientId: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
         },
-      }
+      },
+    }
     : {}),
+  advanced: {
+    useSecureCookies: true,
+    trustedProxyHeaders: true,
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true,
+      httpOnly: true,
+    },
+  },
   plugins: [
     username({
       minUsernameLength: 3,

@@ -16,6 +16,9 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 
 const app = express();
 
+// Trust reverse proxy (Render.com load balancer / TLS termination)
+app.set("trust proxy", 1);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -25,7 +28,8 @@ app.use(
 app.use(
   cors({
     origin: [
-      process.env.CLIENT_URL || "http://localhost:5173",
+      process.env.CLIENT_URL || "https://tharbiya-slms-frontend.vercel.app",
+      "https://tharbiya-slms-frontend.vercel.app",
       "http://localhost:5173",
       "http://127.0.0.1:5173",
     ],
@@ -38,18 +42,20 @@ app.use(
 
 app.use(morgan("dev"));
 
-// 1. Express body parsers
+// 1. Mount Better Auth Handler BEFORE body parsers (preserves raw streams and headers)
+app.all("/api/auth/*", toNodeHandler(auth));
+
+// 2. Express body parsers for application API routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 2. Attach user session to request
+// 3. Attach user session to request
 app.use(authenticate);
 
 import User from "./models/User.js";
 
-// 3. Mount Modular API Routes
+// 4. Mount Modular API Routes
 app.use("/api/auth", authRoutes);
-app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/hifz", hifzRoutes);
 app.use("/api/practical", practicalRoutes);
