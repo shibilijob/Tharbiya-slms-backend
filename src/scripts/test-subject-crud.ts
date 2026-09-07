@@ -28,12 +28,16 @@ async function runSubjectTests() {
     console.log("1️⃣ Testing addSubject...");
     const createdSubject = await muallimService.addSubject({
       name: uniqueSubjectName,
+      arabicTitle: "الفقه الإسلامي",
+      malayalamTitle: "ഫിഖ്ഹ്",
       classId: testClassId,
     });
 
     console.log("✅ Created Subject:", {
       id: createdSubject.id,
       name: createdSubject.name,
+      arabicTitle: createdSubject.arabicTitle,
+      malayalamTitle: createdSubject.malayalamTitle,
       classId: createdSubject.classId,
       className: createdSubject.className,
       isActive: createdSubject.isActive,
@@ -78,22 +82,18 @@ async function runSubjectTests() {
       throw new Error("updateSubject failed: Name not updated");
     }
 
-    // 5. Test Remove Subject (Soft delete)
+    // 5. Test Remove Subject
     console.log("\n5️⃣ Testing removeSubject (Delete/Remove Subject)...");
     const removeResult = await muallimService.removeSubject(createdSubject.id);
     console.log("✅ Remove Result Message:", removeResult.message);
 
     // Verify DB state
     const dbRecord = await Subject.findById(createdSubject.id);
-    console.log("DB Record isActive status:", dbRecord?.isActive);
+    console.log("DB Record found after delete:", dbRecord);
 
-    if (dbRecord?.isActive !== false) {
-      throw new Error("removeSubject failed: isActive was not set to false");
+    if (dbRecord) {
+      throw new Error("removeSubject failed: record was not deleted");
     }
-
-    // Clean up
-    await Subject.findByIdAndDelete(createdSubject.id);
-    console.log("🧹 Test record cleaned up.");
 
     console.log("\n🎉 ALL ACADEMIC SUBJECT CRUD TESTS PASSED SUCCESSFULLY! 🌟\n");
   } catch (error) {

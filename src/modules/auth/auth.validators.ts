@@ -102,3 +102,47 @@ export const validateRegisterInput = (data: RegisterDTO): { isValid: boolean; er
 
   return { isValid: true };
 };
+
+/**
+ * Muallim verify email input validator (Email Only)
+ */
+export const validateVerifyMuallimInput = (
+  data: { email?: string; identifier?: string }
+): { isValid: boolean; error?: string } => {
+  const email = (data.email || data.identifier)?.trim();
+  if (!email) {
+    return { isValid: false, error: "Muallim registered email address is required" };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { isValid: false, error: "Please enter a valid email address (e.g. usthad@darunnajath.edu)" };
+  }
+
+  return { isValid: true };
+};
+
+/**
+ * Muallim password reset input validator (Email Only)
+ */
+export const validateResetMuallimPasswordInput = (
+  data: { email?: string; identifier?: string; newPassword?: string; confirmPassword?: string }
+): { isValid: boolean; error?: string } => {
+  const email = (data.email || data.identifier)?.trim();
+  if (!email) {
+    return { isValid: false, error: "Muallim registered email address is required" };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { isValid: false, error: "Please enter a valid email address" };
+  }
+
+  if (!data.newPassword || typeof data.newPassword !== "string" || data.newPassword.length < 5) {
+    return { isValid: false, error: "New password must be at least 5 characters long" };
+  }
+  if (data.confirmPassword && data.newPassword !== data.confirmPassword) {
+    return { isValid: false, error: "Passwords do not match" };
+  }
+  return { isValid: true };
+};

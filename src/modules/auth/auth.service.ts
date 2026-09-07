@@ -128,7 +128,29 @@ export class AuthService {
 
     const session = await this.authenticateSession(user, password);
 
-    // Role-based payload & permission generation
+    // Determine assignedClasses from MongoDB record
+    let assignedClasses: string[] = [];
+    if (user.assignedClasses && Array.isArray(user.assignedClasses) && user.assignedClasses.length > 0) {
+      assignedClasses = user.assignedClasses.map(c => String(c).replace(/^Class\s*/i, "").trim());
+    } else if ((user as any).assignedClass) {
+      const single = String((user as any).assignedClass).replace(/^Class\s*/i, "").trim();
+      if (single) assignedClasses = [single];
+    }
+
+    // Lookup Class collection if not explicitly stored on user
+    if (assignedClasses.length === 0) {
+      const teacherClasses = await Class.find({ classTeacherId: user._id, isActive: true });
+      if (teacherClasses.length > 0) {
+        assignedClasses = teacherClasses.map((c) => c.name.replace(/^Class\s*/i, "").trim() || c.name);
+      }
+    }
+
+    const assignedSubjects = user.assignedSubjects && user.assignedSubjects.length > 0
+      ? user.assignedSubjects
+      : user.role === "SADHR_MUALLIM"
+      ? ["Fiqh", "Quran", "Islamic Studies", "Tafseer"]
+      : ["Quran", "Hifz", "Tajweed", "Fiqh", "Akhlaq"];
+
     let userPayload: StaffAuthPayload;
 
     if (user.role === "SADHR_MUALLIM") {
@@ -142,33 +164,10 @@ export class AuthService {
         madrasaName: DEFAULT_MADRASA_NAME,
         isAdmin: true,
         isSadhr: true,
-        assignedClasses: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
-        assignedSubjects: ["Fiqh", "Quran", "Islamic Studies", "Tafseer"],
+        assignedClasses,
+        assignedSubjects,
       };
     } else {
-      // MUALLIM (Teacher)
-      let assignedClasses: string[] = [];
-
-      // 1. Check user's assignedClasses or assignedClass on user document
-      if (user.assignedClasses && Array.isArray(user.assignedClasses) && user.assignedClasses.length > 0) {
-        assignedClasses = user.assignedClasses.map(c => String(c).replace(/^Class\s*/i, "").trim());
-      } else if ((user as any).assignedClass) {
-        const single = String((user as any).assignedClass).replace(/^Class\s*/i, "").trim();
-        if (single) assignedClasses = [single];
-      }
-
-      // 2. Lookup Class collection if not explicitly stored on user
-      if (assignedClasses.length === 0) {
-        const teacherClasses = await Class.find({ classTeacherId: user._id, isActive: true });
-        if (teacherClasses.length > 0) {
-          assignedClasses = teacherClasses.map((c) => c.name.replace(/^Class\s*/i, "").trim() || c.name);
-        }
-      }
-
-      const assignedSubjects = user.assignedSubjects && user.assignedSubjects.length > 0
-        ? user.assignedSubjects
-        : ["Quran", "Hifz", "Tajweed", "Fiqh", "Akhlaq"];
-
       userPayload = {
         id: user._id.toString(),
         name: user.name,
@@ -353,6 +352,133 @@ export class AuthService {
       role: { $in: ["SADHR_MUALLIM", "MUALLIM"] },
       isActive: true,
     }).select("-password");
+  }
+
+  /**
+   * Verify Muallim identity for password reset (Email Only)
+   */
+  async verifyMuallim(email: string): Promise<{
+    name: string;
+    email: string;
+    phone: string;
+    designation?: string;
+    role: string;
+  }> {
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // Strictly require email address (never search by phone number)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      throw new AppError("Please provide a valid registered Usthad email address. Phone numbers cannot be used for password recovery.", 400);
+    }
+
+    const user = await User.findOne({ email: cleanEmail });
+
+    if (!user) {
+      throw new AppError("This email address is not registered in the Madrasa system. Please verify your email or contact Sadhr Muallim.", 404);
+    }
+
+    if (!user.isActive) {
+      throw new AppError("This Usthad account is inactive. Please contact Sadhr Muallim.", 403);
+    }
+
+    if (user.role !== "MUALLIM" && user.role !== "SADHR_MUALLIM") {
+      throw new AppError("This email does not belong to a Muallim account. Parents should contact Sadhr Muallim for password assistance.", 403);
+    }
+
+    return {
+      name: user.name,
+      email: user.email || "",
+      phone: user.phone,
+      designation: user.designation || (user.role === "SADHR_MUALLIM" ? "Sadhr Muallim" : "Muallim"),
+      role: user.role,
+    };
+  }
+
+  /**
+   * Send Password Reset Email to Muallim via Better Auth + Brevo
+   */
+  async sendMuallimPasswordResetEmail(email: string): Promise<{
+    success: boolean;
+    message: string;
+    email: string;
+    name: string;
+  }> {
+    const cleanEmail = email.trim().toLowerCase();
+    const verified = await this.verifyMuallim(cleanEmail);
+    const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
+
+    try {
+      // Trigger Better Auth password reset which generates the secure token and calls Brevo email handler
+      await auth.api.requestPasswordReset({
+        body: {
+          email: cleanEmail,
+          redirectTo: `${clientUrl}/reset-password`,
+        },
+      });
+    } catch (baErr: any) {
+      console.error("Better Auth requestPasswordReset error:", baErr);
+      throw new AppError(
+        baErr?.message || "Failed to dispatch password reset email. Please try again.",
+        500
+      );
+    }
+
+    return {
+      success: true,
+      message: `Password reset instructions have been sent to ${cleanEmail}. Please check your email inbox.`,
+      email: cleanEmail,
+      name: verified.name,
+    };
+  }
+
+  /**
+   * Reset Muallim Password with Token (Better Auth + Mongoose Sync)
+   */
+  async resetPasswordWithToken(data: { token?: string; email?: string; newPassword: string }): Promise<any> {
+    const pwd = data.newPassword?.trim();
+    if (!pwd || pwd.length < 5) {
+      throw new AppError("Password must be at least 5 characters long.", 400);
+    }
+
+    if (!data.token) {
+      throw new AppError("A valid password reset token is required.", 400);
+    }
+
+    let userEmail = data.email?.trim().toLowerCase();
+
+    // 1. Execute Better Auth token reset (validates token expiration and authenticity)
+    try {
+      const baRes: any = await auth.api.resetPassword({
+        body: {
+          newPassword: pwd,
+          token: data.token,
+        },
+      });
+      if (baRes?.user?.email) {
+        userEmail = baRes.user.email.toLowerCase();
+      }
+    } catch (err: any) {
+      console.error("Better Auth token reset error:", err?.message || err);
+      throw new AppError(err?.message || "Invalid or expired password reset token. Please request a new link.", 400);
+    }
+
+    // 2. Sync password in Mongoose User collection
+    if (userEmail) {
+      const user = await User.findOne({ email: userEmail });
+      if (user) {
+        if (user.role !== "MUALLIM" && user.role !== "SADHR_MUALLIM") {
+          throw new AppError("Password reset is restricted to Muallim faculty accounts.", 403);
+        }
+        user.password = pwd;
+        await user.save();
+      }
+    }
+
+    return {
+      success: true,
+      message: "Password has been successfully updated. You can now log in.",
+    };
   }
 }
 

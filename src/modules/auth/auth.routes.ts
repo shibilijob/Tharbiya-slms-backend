@@ -19,6 +19,14 @@ router.post("/login/sadhr", authController.loginStaff);
 // 3. Dedicated Parent login (Mobile + PIN/Password)
 router.post("/login/parent", authController.loginParent);
 
+// 4. Muallim Only - Forgot Password & Brevo Email Verification Endpoints
+router.post("/verify-muallim", authController.verifyMuallim);
+router.post("/forgot-password/muallim", authController.sendMuallimPasswordResetEmail);
+router.post("/forgot-password", authController.sendMuallimPasswordResetEmail);
+router.post("/send-reset-email", authController.sendMuallimPasswordResetEmail);
+router.post("/reset-password-token", authController.resetPasswordWithToken);
+router.post("/reset-password/muallim", authController.resetPasswordWithToken);
+
 // ==========================================
 // Session & User Management Endpoints
 // ==========================================
