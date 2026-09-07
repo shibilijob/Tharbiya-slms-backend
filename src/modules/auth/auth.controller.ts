@@ -7,6 +7,8 @@ import {
   validateStaffLoginInput,
   validateParentLoginInput,
   validateRegisterInput,
+  validateVerifyMuallimInput,
+  validateResetMuallimPasswordInput,
 } from "./auth.validators.js";
 
 export class AuthController {
@@ -131,6 +133,69 @@ export class AuthController {
       success: true,
       data: faculty,
     });
+  });
+
+  /**
+   * Verify Muallim identity for forgot password (Email Only)
+   * POST /api/auth/verify-muallim
+   */
+  verifyMuallim = asyncHandler(async (req: Request, res: Response) => {
+    const validation = validateVerifyMuallimInput(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    const email = (req.body.email || req.body.identifier)?.trim();
+    const result = await authService.verifyMuallim(email);
+    return res.status(200).json({
+      success: true,
+      message: "Muallim account verified successfully",
+      data: result,
+    });
+  });
+
+  /**
+   * Send Password Reset Email via Better Auth & Brevo (Muallim Only)
+   * POST /api/auth/forgot-password/muallim
+   */
+  sendMuallimPasswordResetEmail = asyncHandler(async (req: Request, res: Response) => {
+    const validation = validateVerifyMuallimInput(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    const email = (req.body.email || req.body.identifier)?.trim();
+    const result = await authService.sendMuallimPasswordResetEmail(email);
+    return res.status(200).json(result);
+  });
+
+  /**
+   * Reset Password with Better Auth Token
+   * POST /api/auth/reset-password-token
+   */
+  resetPasswordWithToken = asyncHandler(async (req: Request, res: Response) => {
+    const { token, email, newPassword, confirmPassword } = req.body;
+    if (!newPassword || newPassword.length < 5) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 5 characters long",
+      });
+    }
+    if (confirmPassword && newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Passwords do not match",
+      });
+    }
+
+    const result = await authService.resetPasswordWithToken({ token, email, newPassword });
+    return res.status(200).json(result);
   });
 }
 

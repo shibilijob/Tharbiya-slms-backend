@@ -44,8 +44,13 @@ const formatPracticalSubjectResponse = (subj: any): PracticalSubjectResponseDTO 
 const formatSubjectResponse = (subj: any): SubjectResponseDTO => ({
   id: subj._id.toString(),
   name: subj.name,
-  classId: subj.classId?._id ? subj.classId._id.toString() : subj.classId?.toString() || "",
+  arabicTitle: subj.arabicTitle || subj.name,
+  malayalamTitle: subj.malayalamTitle || subj.nameMalayalam || subj.malayalamName || subj.name,
+  classId: subj.classId?._id ? subj.classId._id.toString() : subj.classId?.toString() || undefined,
   className: subj.classId?.name || undefined,
+  description: subj.description || "",
+  color: subj.color || "#0F6B50",
+  icon: subj.icon || "BookOpen",
   isActive: subj.isActive,
   createdAt: subj.createdAt,
   updatedAt: subj.updatedAt,
@@ -585,56 +590,143 @@ export class MuallimService {
    */
 
   /**
-   * Add a new academic subject for a class
+   * Add a new academic subject
    */
   async addSubject(data: CreateSubjectDTO): Promise<SubjectResponseDTO> {
-    if (!mongoose.Types.ObjectId.isValid(data.classId)) {
-      throw new Error("Invalid class ID provided");
-    }
-
     const cleanName = data.name.trim();
 
-    // Verify class existence
-    const classExists = await Class.findById(data.classId);
-    if (!classExists) {
-      throw new Error("Target class not found");
+    let classObjectId: mongoose.Types.ObjectId | undefined = undefined;
+    if (data.classId && data.classId.trim() !== "") {
+      if (!mongoose.Types.ObjectId.isValid(data.classId)) {
+        throw new Error("Invalid class ID provided");
+      }
+      const classExists = await Class.findById(data.classId);
+      if (!classExists) {
+        throw new Error("Target class not found");
+      }
+      classObjectId = new mongoose.Types.ObjectId(data.classId);
     }
 
-    // Check for duplicate active subject in this class
-    const existing = await Subject.findOne({
+    const query: any = {
       name: { $regex: new RegExp(`^${cleanName}$`, "i") },
-      classId: new mongoose.Types.ObjectId(data.classId),
       isActive: true,
-    });
+    };
+    if (classObjectId) {
+      query.classId = classObjectId;
+    } else {
+      query.$or = [{ classId: { $exists: false } }, { classId: null }];
+    }
 
+    const existing = await Subject.findOne(query);
     if (existing) {
-      throw new Error(`Subject "${cleanName}" already exists for ${classExists.name}`);
+      throw new Error(`Subject "${cleanName}" already exists`);
     }
 
     const subject = await Subject.create({
       name: cleanName,
-      classId: new mongoose.Types.ObjectId(data.classId),
+      arabicTitle: data.arabicTitle?.trim() || "",
+      malayalamTitle: data.malayalamTitle?.trim() || "",
+      classId: classObjectId || null,
+      description: data.description?.trim() || "",
+      color: data.color || "#0F6B50",
+      icon: data.icon || "BookOpen",
       isActive: true,
     });
 
-    await subject.populate("classId", "name");
+    if (classObjectId && subject) {
+      await subject.populate("classId", "name");
+    }
 
     return formatSubjectResponse(subject);
   }
 
   /**
-   * Get all active academic subjects (optionally filtered by class)
+   * Get all active academic subjects (optionally filtered by class, with auto-seed to MongoDB if collection empty)
    */
   async getSubjects(classId?: string): Promise<SubjectResponseDTO[]> {
+    const totalCount = await Subject.countDocuments();
+    if (totalCount === 0) {
+      // Auto-seed default curriculum subjects directly into MongoDB
+      const defaultSubjects = [
+        {
+          name: "Quran Tilawat",
+          malayalamTitle: "ഖുർആൻ പാരായണം",
+          arabicTitle: "تلاوة القرآن",
+          description: "Proper pronunciation, rhythmic reading, and daily reading mastery",
+          color: "#0F6B50",
+          icon: "BookOpen",
+        },
+        {
+          name: "Hifzul Quran",
+          malayalamTitle: "ഹിഫ്ള്",
+          arabicTitle: "حفظ القرآن",
+          description: "Surah memorization, daily Sabaq lessons, and Sabaqi revision cycles",
+          color: "#084C3A",
+          icon: "BookmarkCheck",
+        },
+        {
+          name: "Tajweed Rules",
+          malayalamTitle: "തജ്‌വീദ്",
+          arabicTitle: "التجويد",
+          description: "Makharidj, Sifaat, Noon/Meem Sakinah and Madd articulation rules",
+          color: "#3B8772",
+          icon: "Mic",
+        },
+        {
+          name: "Arabic Language",
+          malayalamTitle: "അറബി ഭാഷ",
+          arabicTitle: "اللغة العربية",
+          description: "Vocabulary, grammar (Nahw/Sarf basics), comprehension and writing",
+          color: "#1B735C",
+          icon: "Languages",
+        },
+        {
+          name: "Islamic Studies & Thareekh",
+          malayalamTitle: "ഇസ്‌ലാമിക് സ്റ്റഡീസ് & താരീഖ്",
+          arabicTitle: "التاريخ الإسلامي",
+          description: "Seerah of Prophet (PBUH), companions, Islamic history and values",
+          color: "#248268",
+          icon: "GraduationCap",
+        },
+        {
+          name: "Fiqh & Ahkam",
+          malayalamTitle: "ഫിഖ്ഹ് (കർമ്മശാസ്ത്രം)",
+          arabicTitle: "الفقه الإسلامي",
+          description: "Taharah, Salah, Sawm, Zakah and everyday Islamic jurisprudence",
+          color: "#165B47",
+          icon: "Scale",
+        },
+        {
+          name: "Akhlaq & Adab",
+          malayalamTitle: "അഖ്‌ലാഖ് & ആദാബ്",
+          arabicTitle: "الأخلاق والآداب",
+          description: "Character building, respect for parents & teachers, manners and discipline",
+          color: "#C9A227",
+          icon: "HeartHandshake",
+        },
+      ];
+
+      for (const subj of defaultSubjects) {
+        await Subject.create({
+          ...subj,
+          isActive: true,
+        });
+      }
+    }
+
     const query: any = { isActive: true };
 
     if (classId && mongoose.Types.ObjectId.isValid(classId)) {
-      query.classId = new mongoose.Types.ObjectId(classId);
+      query.$or = [
+        { classId: new mongoose.Types.ObjectId(classId) },
+        { classId: { $exists: false } },
+        { classId: null },
+      ];
     }
 
     const subjects = await Subject.find(query)
       .populate("classId", "name")
-      .sort({ name: 1 });
+      .sort({ createdAt: 1 });
 
     return subjects.map((s) => formatSubjectResponse(s));
   }
@@ -681,31 +773,60 @@ export class MuallimService {
 
     // Update target class if provided
     if (data.classId !== undefined) {
-      if (!mongoose.Types.ObjectId.isValid(data.classId)) {
-        throw new Error("Invalid class ID provided");
+      if (data.classId && data.classId.trim() !== "") {
+        if (!mongoose.Types.ObjectId.isValid(data.classId)) {
+          throw new Error("Invalid class ID provided");
+        }
+        const classExists = await Class.findById(data.classId);
+        if (!classExists) {
+          throw new Error("Target class not found");
+        }
+        subject.classId = new mongoose.Types.ObjectId(data.classId);
+      } else {
+        subject.classId = null;
       }
-      const classExists = await Class.findById(data.classId);
-      if (!classExists) {
-        throw new Error("Target class not found");
-      }
-      subject.classId = new mongoose.Types.ObjectId(data.classId);
     }
 
     // Update name if provided
     if (data.name !== undefined) {
       const cleanName = data.name.trim();
-      const duplicate = await Subject.findOne({
+      const duplicateQuery: any = {
         name: { $regex: new RegExp(`^${cleanName}$`, "i") },
-        classId: subject.classId,
         _id: { $ne: subject._id },
         isActive: true,
-      });
+      };
+      if (subject.classId) {
+        duplicateQuery.classId = subject.classId;
+      } else {
+        duplicateQuery.$or = [{ classId: { $exists: false } }, { classId: null }];
+      }
 
+      const duplicate = await Subject.findOne(duplicateQuery);
       if (duplicate) {
-        throw new Error(`Another subject named "${cleanName}" already exists for this class`);
+        throw new Error(`Another subject named "${cleanName}" already exists`);
       }
 
       subject.name = cleanName;
+    }
+
+    if (data.arabicTitle !== undefined) {
+      subject.arabicTitle = data.arabicTitle.trim();
+    }
+
+    if (data.malayalamTitle !== undefined) {
+      subject.malayalamTitle = data.malayalamTitle.trim();
+    }
+
+    if (data.description !== undefined) {
+      subject.description = data.description.trim();
+    }
+
+    if (data.color !== undefined) {
+      subject.color = data.color;
+    }
+
+    if (data.icon !== undefined) {
+      subject.icon = data.icon;
     }
 
     // Update isActive if provided
@@ -714,13 +835,15 @@ export class MuallimService {
     }
 
     await subject.save();
-    await subject.populate("classId", "name");
+    if (subject.classId) {
+      await subject.populate("classId", "name");
+    }
 
     return formatSubjectResponse(subject);
   }
 
   /**
-   * Remove / Soft-delete an academic subject
+   * Remove / Delete an academic subject
    */
   async removeSubject(id: string): Promise<{ success: boolean; message: string; deletedId: string }> {
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -729,21 +852,18 @@ export class MuallimService {
 
     const subject = await Subject.findOne({
       _id: new mongoose.Types.ObjectId(id),
-      isActive: true,
     });
 
     if (!subject) {
-      throw new Error("Subject not found or already removed");
+      throw new Error("Subject not found");
     }
 
-    // Soft delete by setting isActive to false
-    subject.isActive = false;
-    await subject.save();
+    await Subject.findByIdAndDelete(id);
 
     return {
       success: true,
-      message: `Subject "${subject.name}" removed successfully`,
-      deletedId: subject._id.toString(),
+      message: `Subject "${subject.name}" deleted successfully`,
+      deletedId: id,
     };
   }
 

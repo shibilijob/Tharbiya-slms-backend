@@ -79,20 +79,35 @@ export interface PracticalSubjectResponseDTO {
 // Academic Subject Management DTOs
 export interface CreateSubjectDTO {
   name: string;
-  classId: string;
+  arabicTitle?: string;
+  malayalamTitle?: string;
+  classId?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
 }
 
 export interface UpdateSubjectDTO {
   name?: string;
+  arabicTitle?: string;
+  malayalamTitle?: string;
   classId?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
   isActive?: boolean;
 }
 
 export interface SubjectResponseDTO {
   id: string;
   name: string;
-  classId: string;
+  arabicTitle?: string;
+  malayalamTitle?: string;
+  classId?: string;
   className?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

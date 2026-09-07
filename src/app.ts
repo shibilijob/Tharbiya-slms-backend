@@ -42,20 +42,20 @@ app.use(
 
 app.use(morgan("dev"));
 
-// 1. Mount Better Auth Handler BEFORE body parsers (preserves raw streams and headers)
-app.all("/api/auth/*", toNodeHandler(auth));
-
-// 2. Express body parsers for application API routes
+// 1. Express body parsers for application API routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 3. Attach user session to request
+// 2. Attach user session to request
 app.use(authenticate);
 
 import User from "./models/User.js";
 
-// 4. Mount Modular API Routes
+// 3. Mount Custom Auth Routes (login, parent login, staff login, me, register, faculty)
 app.use("/api/auth", authRoutes);
+
+// 4. Mount Better Auth Handler for remaining Better Auth endpoints
+app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/hifz", hifzRoutes);
 app.use("/api/practical", practicalRoutes);

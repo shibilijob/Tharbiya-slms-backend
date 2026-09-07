@@ -3,6 +3,8 @@ import { mongodbAdapter } from "@better-auth/mongo-adapter";
 import { MongoClient } from "mongodb";
 import { username } from "better-auth/plugins";
 
+import { sendBrevoEmail, generateResetPasswordEmailHtml } from "../../utils/brevoEmail.js";
+
 const mongoURI = process.env.MONGO_URI || "mongodb://localhost:27017/tharbiya";
 export const mongoClient = new MongoClient(mongoURI);
 const db = mongoClient.db();
@@ -27,6 +29,19 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     minPasswordLength: 4,
+    sendResetPassword: async ({ user, url, token }) => {
+      const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+      const resetLink = url && url.includes("http")
+        ? url
+        : `${clientUrl}/reset-password?token=${token}`;
+
+      console.log(`📧 [Better Auth] Triggering Brevo password reset email for ${user.email}`);
+      await sendBrevoEmail({
+        to: [{ email: user.email, name: user.name || "Usthad" }],
+        subject: "Password Reset Request — Darunnajath Tharbiyah",
+        html: generateResetPasswordEmailHtml(user.name || "Usthad", resetLink),
+      });
+    },
   },
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
