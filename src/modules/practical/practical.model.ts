@@ -8,6 +8,7 @@ export interface IPracticalEvaluation extends Document {
   month?: string;
   scores: Array<{
     category: PracticalCategory;
+    practicalSubjectId?: Types.ObjectId;
     score: number;
     remarks?: string;
   }>;
@@ -44,24 +45,21 @@ const practicalEvaluationSchema = new Schema<IPracticalEvaluation>(
     },
     scores: [
       {
+        practicalSubjectId: {
+          type: Schema.Types.ObjectId,
+          ref: "PracticalSubject",
+          required: false,
+        },
         category: {
           type: String,
-          enum: [
-            "SALAH",
-            "WUDU",
-            "ADAB",
-            "AKHLAQ",
-            "CLEANLINESS",
-            "RESPONSIBILITY",
-            "PARTICIPATION",
-          ],
           required: true,
+          trim: true,
         },
         score: {
           type: Number,
           required: true,
           min: 0,
-          max: 10,
+          max: 100,
         },
         remarks: {
           type: String,

@@ -9,7 +9,6 @@ export interface IDeletedUser extends Document {
   role: UserRole;
   designation?: string | undefined;
   assignedClasses?: string[] | undefined;
-  assignedSubjects?: string[] | undefined;
   isActive: boolean;
   deletedAt: Date;
   deletedBy: Types.ObjectId | string;
@@ -56,13 +55,6 @@ const deletedUserSchema = new Schema<IDeletedUser>(
     },
 
     assignedClasses: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
-
-    assignedSubjects: [
       {
         type: String,
         trim: true,

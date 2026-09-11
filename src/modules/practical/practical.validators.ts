@@ -15,27 +15,17 @@ export const validatePracticalEvaluationInput = (
     return { isValid: false, error: "Evaluation scores array cannot be empty" };
   }
 
-  const validCategories = [
-    "SALAH",
-    "WUDU",
-    "ADAB",
-    "AKHLAQ",
-    "CLEANLINESS",
-    "RESPONSIBILITY",
-    "PARTICIPATION",
-  ];
-
   for (const item of data.scores) {
-    if (!validCategories.includes(item.category)) {
+    if (!item.category || typeof item.category !== "string" || item.category.trim().length === 0) {
       return {
         isValid: false,
-        error: `Invalid category "${item.category}". Allowed: ${validCategories.join(", ")}`,
+        error: `Category is required for all evaluation scores`,
       };
     }
-    if (typeof item.score !== "number" || item.score < 0 || item.score > 10) {
+    if (typeof item.score !== "number" || item.score < 0 || item.score > 100) {
       return {
         isValid: false,
-        error: `Score for ${item.category} must be a number between 0 and 10`,
+        error: `Score for ${item.category} must be a number between 0 and 100`,
       };
     }
   }

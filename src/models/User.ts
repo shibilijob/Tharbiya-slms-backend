@@ -10,7 +10,6 @@ export interface IUser extends Document {
   role: UserRole;
   designation?: string | undefined;
   assignedClasses?: string[] | undefined;
-  assignedSubjects?: string[] | undefined;
   isActive: boolean;
   deletedAt?: Date | undefined;
   deletedBy?: string | undefined;
@@ -59,13 +58,6 @@ const userSchema = new Schema<IUser>(
     },
 
     assignedClasses: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
-
-    assignedSubjects: [
       {
         type: String,
         trim: true,

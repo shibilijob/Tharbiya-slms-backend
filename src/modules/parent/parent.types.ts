@@ -1,5 +1,6 @@
 import type { StudentAttendanceSummary } from "../attendance/attendance.types.js";
 import type { StudentHifzSummary } from "../hifz/hifz.types.js";
+import type { HifzTargetResponseDTO } from "../hifz/hifz.types.js";
 import type { StudentPracticalReport } from "../practical/practical.types.js";
 import type { AchievementResponseDTO, PeriodResponseDTO, MadrasaDay } from "../muallim/muallim.types.js";
 
@@ -59,8 +60,23 @@ export interface ChildAttendanceDTO {
 export interface ChildHifzDTO {
   studentId: string;
   studentName: string;
+  student?: {
+    id: string;
+    name: string;
+    classId: string;
+    className: string;
+  };
   className: string;
   summary: StudentHifzSummary;
+  target: HifzTargetResponseDTO | null;
+  targets: Array<{
+    target: HifzTargetResponseDTO;
+    completedAyahs: number[];
+    progressPercentage: number;
+    status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+    logs: any[];
+  }>;
+  completedAyahs: number[];
   logs: any[];
 }
 

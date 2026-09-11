@@ -1,4 +1,4 @@
-export type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
+export type AttendanceStatus = "PRESENT" | "ABSENT" | "LEAVE" | "HOLIDAY";
 
 export interface AttendanceItemDTO {
   studentId: string;
@@ -27,7 +27,7 @@ export interface StudentAttendanceSummary {
   totalDays: number;
   presentDays: number;
   absentDays: number;
-  lateDays: number;
-  excusedDays: number;
+  leaveDays: number;
+  holidayDays: number;
   percentage: number;
 }

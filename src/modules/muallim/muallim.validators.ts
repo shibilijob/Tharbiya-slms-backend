@@ -1,6 +1,5 @@
 import type {
   MarkClassAttendanceDTO,
-  RecordHifzDTO,
   RecordPracticalEvaluationDTO,
 } from "./muallim.types.js";
 
@@ -22,7 +21,7 @@ export const validateMarkAttendanceInput = (
     return { isValid: false, error: "Attendance records array cannot be empty" };
   }
 
-  const validStatuses = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
+  const validStatuses = ["PRESENT", "ABSENT", "LEAVE", "HOLIDAY"];
   for (const item of data.records) {
     if (!item.studentId) {
       return { isValid: false, error: "Student ID is missing in one or more records" };
@@ -33,35 +32,6 @@ export const validateMarkAttendanceInput = (
         error: `Invalid status "${item.status}". Allowed: ${validStatuses.join(", ")}`,
       };
     }
-  }
-
-  return { isValid: true };
-};
-
-/**
- * Validator for recording Quran / Hifz progress
- */
-export const validateRecordHifzInput = (
-  data: RecordHifzDTO
-): { isValid: boolean; error?: string } => {
-  if (!data.studentId) {
-    return { isValid: false, error: "Student ID is required" };
-  }
-
-  if (!data.classId) {
-    return { isValid: false, error: "Class ID is required" };
-  }
-
-  if (!data.surahNumber || data.surahNumber < 1 || data.surahNumber > 114) {
-    return { isValid: false, error: "Surah number must be between 1 and 114" };
-  }
-
-  if (!data.fromAyah || !data.toAyah || data.fromAyah > data.toAyah) {
-    return { isValid: false, error: "Invalid Ayah range: fromAyah cannot exceed toAyah" };
-  }
-
-  if (!data.rating || data.rating < 1 || data.rating > 5) {
-    return { isValid: false, error: "Rating must be between 1 and 5" };
   }
 
   return { isValid: true };
@@ -85,27 +55,17 @@ export const validatePracticalEvaluationInput = (
     return { isValid: false, error: "Evaluation scores array cannot be empty" };
   }
 
-  const validCategories = [
-    "SALAH",
-    "WUDU",
-    "ADAB",
-    "AKHLAQ",
-    "CLEANLINESS",
-    "RESPONSIBILITY",
-    "PARTICIPATION",
-  ];
-
   for (const item of data.scores) {
-    if (!validCategories.includes(item.category)) {
+    if (!item.category || typeof item.category !== "string" || item.category.trim().length === 0) {
       return {
         isValid: false,
-        error: `Invalid category "${item.category}". Allowed: ${validCategories.join(", ")}`,
+        error: `Category is required for all evaluation scores`,
       };
     }
-    if (typeof item.score !== "number" || item.score < 0 || item.score > 10) {
+    if (typeof item.score !== "number" || item.score < 0 || item.score > 100) {
       return {
         isValid: false,
-        error: `Score for ${item.category} must be a number between 0 and 10`,
+        error: `Score for ${item.category} must be a valid number between 0 and 100`,
       };
     }
   }
@@ -117,7 +77,7 @@ export const validatePracticalEvaluationInput = (
  * Validator for adding practical subject
  */
 export const validateCreatePracticalSubjectInput = (
-  data: { name?: string; classId?: string }
+  data: { name?: string; classId?: string; maxScore?: any }
 ): { isValid: boolean; error?: string } => {
   if (!data.name || typeof data.name !== "string" || data.name.trim().length < 2) {
     return { isValid: false, error: "Practical subject name is required (min 2 characters)" };
@@ -127,6 +87,13 @@ export const validateCreatePracticalSubjectInput = (
     return { isValid: false, error: "Class ID is required" };
   }
 
+  if (data.maxScore !== undefined) {
+    const num = Number(data.maxScore);
+    if (isNaN(num) || !Number.isInteger(num) || num < 1 || num > 100) {
+      return { isValid: false, error: "Maximum mark must be an integer between 1 and 100" };
+    }
+  }
+
   return { isValid: true };
 };
 
@@ -134,7 +101,7 @@ export const validateCreatePracticalSubjectInput = (
  * Validator for updating practical subject
  */
 export const validateUpdatePracticalSubjectInput = (
-  data: { name?: string; classId?: string; isActive?: boolean }
+  data: { name?: string; classId?: string; maxScore?: any; isActive?: boolean }
 ): { isValid: boolean; error?: string } => {
   if (data.name !== undefined && (typeof data.name !== "string" || data.name.trim().length < 2)) {
     return { isValid: false, error: "Practical subject name must be at least 2 characters" };
@@ -142,6 +109,13 @@ export const validateUpdatePracticalSubjectInput = (
 
   if (data.classId !== undefined && (typeof data.classId !== "string" || data.classId.trim().length === 0)) {
     return { isValid: false, error: "Invalid class ID provided" };
+  }
+
+  if (data.maxScore !== undefined) {
+    const num = Number(data.maxScore);
+    if (isNaN(num) || !Number.isInteger(num) || num < 1 || num > 100) {
+      return { isValid: false, error: "Maximum mark must be an integer between 1 and 100" };
+    }
   }
 
   return { isValid: true };
@@ -155,10 +129,6 @@ export const validateCreateSubjectInput = (
 ): { isValid: boolean; error?: string } => {
   if (!data.name || typeof data.name !== "string" || data.name.trim().length < 2) {
     return { isValid: false, error: "Subject name is required (min 2 characters)" };
-  }
-
-  if (!data.classId || typeof data.classId !== "string" || data.classId.trim().length === 0) {
-    return { isValid: false, error: "Class ID is required" };
   }
 
   return { isValid: true };
@@ -312,7 +282,6 @@ export const validateUpdatePeriodInput = (
 
   return { isValid: true };
 };
-
 
 
 

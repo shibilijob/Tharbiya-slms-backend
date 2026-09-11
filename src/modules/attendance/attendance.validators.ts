@@ -15,7 +15,7 @@ export const validateMarkAttendanceInput = (
     return { isValid: false, error: "Attendance records array cannot be empty" };
   }
 
-  const validStatuses = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
+  const validStatuses = ["PRESENT", "ABSENT", "LEAVE", "HOLIDAY"];
   for (const item of data.records) {
     if (!item.studentId) {
       return { isValid: false, error: "Student ID is missing in one or more records" };

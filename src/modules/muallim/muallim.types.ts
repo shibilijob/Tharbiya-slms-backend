@@ -7,9 +7,6 @@ import type {
 } from "../attendance/attendance.types.js";
 
 import type {
-  HifzRating,
-  HifzSessionType,
-  RecordHifzDTO,
   StudentHifzSummary,
 } from "../hifz/hifz.types.js";
 
@@ -27,9 +24,6 @@ export type {
   MarkClassAttendanceDTO,
   AttendanceFilterQuery,
   StudentAttendanceSummary,
-  HifzRating,
-  HifzSessionType,
-  RecordHifzDTO,
   StudentHifzSummary,
   PracticalCategory,
   PracticalScoreItem,
@@ -50,19 +44,22 @@ export interface MuallimDashboardStats {
   totalAssignedStudents: number;
   todayAttendanceMarked: boolean;
   todayAttendancePercentage: number;
-  recentHifzLogsCount: number;
+  recentHifzRecordsCount: number;
   recentEvaluationsCount: number;
+  awardsGivenCount: number;
 }
 
 // Practical Subject Management DTOs
 export interface CreatePracticalSubjectDTO {
   name: string;
   classId: string;
+  maxScore?: number;
 }
 
 export interface UpdatePracticalSubjectDTO {
   name?: string;
   classId?: string;
+  maxScore?: number;
   isActive?: boolean;
 }
 
@@ -71,6 +68,7 @@ export interface PracticalSubjectResponseDTO {
   name: string;
   classId: string;
   className?: string;
+  maxScore: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -201,7 +199,6 @@ export interface PeriodResponseDTO {
   createdAt: Date;
   updatedAt: Date;
 }
-
 
 
 

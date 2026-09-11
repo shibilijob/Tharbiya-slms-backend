@@ -67,7 +67,6 @@ export interface CreateMuallimDTO {
   role?: "MUALLIM" | "SADHR_MUALLIM";
   designation?: string;
   assignedClasses?: string[];
-  assignedSubjects?: string[];
 }
 
 export interface UpdateMuallimDTO {
@@ -78,7 +77,6 @@ export interface UpdateMuallimDTO {
   role?: "MUALLIM" | "SADHR_MUALLIM";
   designation?: string;
   assignedClasses?: string[];
-  assignedSubjects?: string[];
   isActive?: boolean;
 }
 
@@ -90,7 +88,6 @@ export interface MuallimResponseDTO {
   role: "MUALLIM" | "SADHR_MUALLIM" | "PARENT";
   designation?: string;
   assignedClasses?: string[];
-  assignedSubjects?: string[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -185,12 +182,10 @@ export interface ClassResponseDTO {
   classTeacherName?: string;
   classTeacherPhone?: string;
   studentCount: number;
-  averageAttendance: number;
   averageProgress: number;
   capacity?: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
-
 

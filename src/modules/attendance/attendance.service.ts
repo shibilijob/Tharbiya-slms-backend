@@ -22,9 +22,26 @@ export class AttendanceService {
   async getStudentAttendance(
     studentId: string,
     startDate?: string,
-    endDate?: string
+    endDate?: string,
+    beforeDate?: Date
   ): Promise<{ records: any[]; summary: StudentAttendanceSummary }> {
-    return muallimService.getStudentAttendance(studentId, startDate, endDate);
+    return muallimService.getStudentAttendance(studentId, startDate, endDate, beforeDate);
+  }
+
+  /**
+   * Get attendance records filtered by query parameters and user context
+   */
+  async getAttendanceList(filters: {
+    classId?: string;
+    date?: string;
+    studentId?: string;
+    startDate?: string;
+    endDate?: string;
+    beforeDate?: Date;
+    userId?: string;
+    role?: string;
+  }) {
+    return muallimService.getAttendanceList(filters);
   }
 }
 
