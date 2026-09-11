@@ -12,9 +12,8 @@ const SEED_USERS = [
     password: "shihab@yopmail.com",
     role: "SADHR_MUALLIM" as const,
     isActive: true,
-    designation: "Sadhr Muallim (Sadhr Mudarris) & Class 7 Mentor",
-    assignedClasses: JSON.stringify(["7", "6"]),
-    assignedSubjects: JSON.stringify(["Fiqh", "Quran", "Islamic Studies"]),
+    designation: "Sadhr Muallim (Sadhr Mudarris)",
+    assignedClasses: JSON.stringify(["1", "8", "12"]),
   },
   {
     name: "Saidalavi Saadi",
@@ -24,19 +23,17 @@ const SEED_USERS = [
     role: "MUALLIM" as const,
     isActive: true,
     designation: "Senior Usthad & Hifz Section Supervisor",
-    assignedClasses: JSON.stringify(["3", "4"]),
-    assignedSubjects: JSON.stringify(["Hifz", "Quran", "Akhlaq"]),
+    assignedClasses: JSON.stringify(["3", "7", "11"]),
   },
   {
     name: "Shibili Ahsani",
-    email: "shibili@yopmail.com",
+    email: "shibilijob@gmail.com",
     phone: "0000000003",
     password: "shibili@yopmail.com",
     role: "MUALLIM" as const,
     isActive: true,
-    designation: "Senior Usthad & Class 5 Mentor",
-    assignedClasses: JSON.stringify(["5", "6"]),
-    assignedSubjects: JSON.stringify(["Quran", "Hifz", "Tajweed", "Fiqh"]),
+    designation: "Senior Usthad & Class 4 Mentor",
+    assignedClasses: JSON.stringify(["4", "6", "10"]),
   },
   {
     name: "Misbahudheen Saqafi",
@@ -46,8 +43,7 @@ const SEED_USERS = [
     role: "MUALLIM" as const,
     isActive: true,
     designation: "Arabic & Islamic Studies Specialist",
-    assignedClasses: JSON.stringify(["4", "5", "7"]),
-    assignedSubjects: JSON.stringify(["Arabic", "Islamic Studies"]),
+    assignedClasses: JSON.stringify(["2", "5", "9"]),
   },
   {
     name: "Ali Mundambra",
@@ -58,7 +54,6 @@ const SEED_USERS = [
     isActive: true,
     designation: "Parent / Guardian",
     assignedClasses: JSON.stringify([]),
-    assignedSubjects: JSON.stringify([]),
   },
 ];
 
@@ -79,6 +74,8 @@ async function seed() {
           password: userData.password,
           role: userData.role,
           isActive: userData.isActive,
+          designation: userData.designation,
+          assignedClasses: JSON.parse(userData.assignedClasses),
         },
         { upsert: true, new: true }
       );
@@ -97,7 +94,6 @@ async function seed() {
             designation: userData.designation,
             madrasaName: "Darunnajath Mundambra",
             assignedClasses: userData.assignedClasses,
-            assignedSubjects: userData.assignedSubjects,
           },
         });
 

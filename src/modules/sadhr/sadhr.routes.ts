@@ -88,6 +88,14 @@ router.get(
   sadhrController.getAllStudents
 );
 
+// Export all active students as PDF
+router.get(
+  "/students/export/active",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.exportActiveStudents
+);
+
 // Update student
 router.patch(
   "/students/:id",
@@ -180,6 +188,14 @@ router.get(
   requireAuth,
   requireRole(["SADHR_MUALLIM"]),
   sadhrController.getAllParents
+);
+
+// Export active parent login credential cards as PDF
+router.get(
+  "/parents/export",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.exportParentDetails
 );
 
 // Get single Parent by ID

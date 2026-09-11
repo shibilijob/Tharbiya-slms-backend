@@ -79,7 +79,6 @@ app.get("/api/faculty-members", async (_req, res) => {
       role: t.role,
       designation: t.designation || (t.role === "SADHR_MUALLIM" ? "Sadhr Muallim" : "Muallim"),
       assignedClasses: t.assignedClasses || [],
-      assignedSubjects: t.assignedSubjects || [],
     }));
 
     return res.json({

@@ -99,6 +99,18 @@ export class SadhrController {
   );
 
   /**
+   * Download all active students as a PDF table.
+   */
+  exportActiveStudents = asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+    const pdf = await sadhrService.exportActiveStudentsPdf();
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="active-students.pdf"');
+    res.setHeader("Content-Length", pdf.length);
+    return res.status(200).send(pdf);
+  });
+
+  /**
    * Update student details
    */
   updateStudent = asyncHandler(
@@ -310,6 +322,18 @@ export class SadhrController {
   });
 
   /**
+   * Download all active parent login credential cards.
+   */
+  exportParentDetails = asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {
+    const pdf = await sadhrService.exportParentDetailsPdf();
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="parent-details.pdf"');
+    res.setHeader("Content-Length", pdf.length);
+    return res.status(200).send(pdf);
+  });
+
+  /**
    * Get single Parent details
    */
   getParentById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
@@ -473,5 +497,4 @@ export class SadhrController {
 }
 
 export const sadhrController = new SadhrController();
-
 

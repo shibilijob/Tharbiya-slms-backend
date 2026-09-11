@@ -3,7 +3,6 @@ import type { AuthenticatedRequest } from "../auth/auth.middleware.js";
 import { muallimService } from "./muallim.service.js";
 import {
   validateMarkAttendanceInput,
-  validateRecordHifzInput,
   validatePracticalEvaluationInput,
   validateCreatePracticalSubjectInput,
   validateUpdatePracticalSubjectInput,
@@ -60,7 +59,8 @@ export class MuallimController {
       });
     }
 
-    const students = await muallimService.getClassStudents(classId);
+    const muallimId = req.user?.id || "";
+    const students = await muallimService.getClassStudents(classId, muallimId);
 
     return res.json({
       success: true,
@@ -138,48 +138,29 @@ export class MuallimController {
    * =========================================================================
    */
 
-  /**
-   * Log student's daily Quran / Hifz recitation
-   */
-  logHifzProgress = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const validation = validateRecordHifzInput(req.body);
-    if (!validation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: validation.error,
-      });
-    }
-
-    const teacherId = req.user?.id || "teacher-system";
-    const log = await muallimService.recordHifzLog(req.body, teacherId);
-
-    return res.status(201).json({
-      success: true,
-      message: "Hifz entry recorded successfully",
-      data: log,
-    });
-  });
 
   /**
-   * Get student's Hifz log history
+   * Get student's Quran recitation history
    */
   getStudentHifzHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const studentId = String(req.params.studentId);
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+    const studentId = String(req.params.studentId || "");
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
 
     const history = await muallimService.getStudentHifzHistory(studentId, limit);
 
     return res.json({
       success: true,
+      count: history.length,
       data: history,
     });
   });
 
   /**
-   * Get student's overall Hifz summary
+   * Get student's Hifz summary and statistics
    */
   getStudentHifzSummary = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const studentId = String(req.params.studentId);
+    const studentId = String(req.params.studentId || "");
+
     const summary = await muallimService.getStudentHifzSummary(studentId);
 
     return res.json({
@@ -195,7 +176,7 @@ export class MuallimController {
    */
 
   /**
-   * Record practical & adab scores
+   * Record a new practical evaluation for a student
    */
   recordPracticalEvaluation = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const validation = validatePracticalEvaluationInput(req.body);
@@ -207,33 +188,36 @@ export class MuallimController {
     }
 
     const evaluatedById = req.user?.id || "teacher-system";
-    const evaluation = await muallimService.recordEvaluation(req.body, evaluatedById);
+    const result = await muallimService.recordEvaluation(req.body, evaluatedById);
 
     return res.status(201).json({
       success: true,
-      message: "Practical evaluation saved successfully",
-      data: evaluation,
+      message: "Practical & adab evaluation recorded successfully",
+      data: result,
     });
   });
 
   /**
-   * Get student's practical evaluations history
+   * Get student's evaluation history
    */
   getStudentEvaluations = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const studentId = String(req.params.studentId);
+    const studentId = String(req.params.studentId || "");
+
     const evaluations = await muallimService.getStudentEvaluations(studentId);
 
     return res.json({
       success: true,
+      count: evaluations.length,
       data: evaluations,
     });
   });
 
   /**
-   * Get student's practical score report breakdown
+   * Get student's comprehensive practical report
    */
   getStudentPracticalReport = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const studentId = String(req.params.studentId);
+    const studentId = String(req.params.studentId || "");
+
     const report = await muallimService.getStudentPracticalReport(studentId);
 
     return res.json({
@@ -244,7 +228,7 @@ export class MuallimController {
 
   /**
    * =========================================================================
-   * PRACTICAL SUBJECT MANAGEMENT HANDLERS
+   * PRACTICAL SUBJECT MANAGEMENT HANDLERS (Add, List, Update, Remove)
    * =========================================================================
    */
 
@@ -260,7 +244,8 @@ export class MuallimController {
       });
     }
 
-    const practicalSubject = await muallimService.addPracticalSubject(req.body);
+    const muallimId = req.user?.id || "";
+    const practicalSubject = await muallimService.addPracticalSubject(req.body, muallimId);
 
     return res.status(201).json({
       success: true,
@@ -274,7 +259,8 @@ export class MuallimController {
    */
   getPracticalSubjects = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const classId = (req.query.classId || req.params.classId) as string | undefined;
-    const subjects = await muallimService.getPracticalSubjects(classId);
+    const muallimId = req.user?.id || "";
+    const subjects = await muallimService.getPracticalSubjects(classId, muallimId);
 
     return res.json({
       success: true,
@@ -295,7 +281,8 @@ export class MuallimController {
       });
     }
 
-    const subject = await muallimService.getPracticalSubjectById(id);
+    const muallimId = req.user?.id || "";
+    const subject = await muallimService.getPracticalSubjectById(id, muallimId);
 
     return res.json({
       success: true,
@@ -323,7 +310,8 @@ export class MuallimController {
       });
     }
 
-    const updated = await muallimService.updatePracticalSubject(id, req.body);
+    const muallimId = req.user?.id || "";
+    const updated = await muallimService.updatePracticalSubject(id, req.body, muallimId);
 
     return res.json({
       success: true,
@@ -344,7 +332,8 @@ export class MuallimController {
       });
     }
 
-    const result = await muallimService.removePracticalSubject(id);
+    const muallimId = req.user?.id || "";
+    const result = await muallimService.removePracticalSubject(id, muallimId);
 
     return res.json({
       success: true,
@@ -371,7 +360,8 @@ export class MuallimController {
       });
     }
 
-    const subject = await muallimService.addSubject(req.body);
+    const muallimId = req.user?.id || "";
+    const subject = await muallimService.addSubject(req.body, muallimId);
 
     return res.status(201).json({
       success: true,
@@ -381,11 +371,12 @@ export class MuallimController {
   });
 
   /**
-   * Get all active academic subjects (optionally filtered by class)
+   * Get all active academic subjects (filtered by class and teacher assignment)
    */
   getSubjects = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const classId = (req.query.classId || req.params.classId) as string | undefined;
-    const subjects = await muallimService.getSubjects(classId);
+    const muallimId = req.user?.id || "";
+    const subjects = await muallimService.getSubjects(classId, muallimId);
 
     return res.json({
       success: true,
@@ -406,7 +397,8 @@ export class MuallimController {
       });
     }
 
-    const subject = await muallimService.getSubjectById(id);
+    const muallimId = req.user?.id || "";
+    const subject = await muallimService.getSubjectById(id, muallimId);
 
     return res.json({
       success: true,
@@ -434,7 +426,8 @@ export class MuallimController {
       });
     }
 
-    const updated = await muallimService.updateSubject(id, req.body);
+    const muallimId = req.user?.id || "";
+    const updated = await muallimService.updateSubject(id, req.body, muallimId);
 
     return res.json({
       success: true,
@@ -455,7 +448,8 @@ export class MuallimController {
       });
     }
 
-    const result = await muallimService.removeSubject(id);
+    const muallimId = req.user?.id || "";
+    const result = await muallimService.removeSubject(id, muallimId);
 
     return res.json({
       success: true,
@@ -498,8 +492,9 @@ export class MuallimController {
   getAchievements = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = (req.query.studentId || req.params.studentId) as string | undefined;
     const classId = (req.query.classId || req.params.classId) as string | undefined;
+    const muallimId = req.user?.id || "";
 
-    const achievements = await muallimService.getAchievements({ studentId, classId });
+    const achievements = await muallimService.getAchievements({ studentId, classId, muallimId });
 
     return res.json({
       success: true,
@@ -520,7 +515,8 @@ export class MuallimController {
       });
     }
 
-    const achievement = await muallimService.getAchievementById(id);
+    const muallimId = req.user?.id || "";
+    const achievement = await muallimService.getAchievementById(id, muallimId);
 
     return res.json({
       success: true,
@@ -540,7 +536,8 @@ export class MuallimController {
       });
     }
 
-    const result = await muallimService.deleteAchievement(id);
+    const muallimId = req.user?.id || "";
+    const result = await muallimService.deleteAchievement(id, muallimId);
 
     return res.json({
       success: true,
@@ -567,7 +564,8 @@ export class MuallimController {
       });
     }
 
-    const period = await muallimService.addPeriod(req.body);
+    const muallimId = req.user?.id || "";
+    const period = await muallimService.addPeriod(req.body, muallimId);
 
     return res.status(201).json({
       success: true,
@@ -582,8 +580,9 @@ export class MuallimController {
   getPeriods = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const classId = (req.query.classId || req.params.classId) as string | undefined;
     const day = req.query.day as any;
+    const muallimId = req.user?.id || "";
 
-    const periods = await muallimService.getPeriods({ classId, day });
+    const periods = await muallimService.getPeriods({ classId, day, muallimId });
 
     return res.json({
       success: true,
@@ -604,7 +603,8 @@ export class MuallimController {
       });
     }
 
-    const period = await muallimService.getPeriodById(id);
+    const muallimId = req.user?.id || "";
+    const period = await muallimService.getPeriodById(id, muallimId);
 
     return res.json({
       success: true,
@@ -632,7 +632,8 @@ export class MuallimController {
       });
     }
 
-    const updated = await muallimService.updatePeriod(id, req.body);
+    const muallimId = req.user?.id || "";
+    const updated = await muallimService.updatePeriod(id, req.body, muallimId);
 
     return res.json({
       success: true,
@@ -653,7 +654,8 @@ export class MuallimController {
       });
     }
 
-    const result = await muallimService.deletePeriod(id);
+    const muallimId = req.user?.id || "";
+    const result = await muallimService.deletePeriod(id, muallimId);
 
     return res.json({
       success: true,

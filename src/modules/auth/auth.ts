@@ -100,12 +100,6 @@ export const auth = betterAuth({
         defaultValue: "[]",
         input: true,
       },
-      assignedSubjects: {
-        type: "string",
-        required: false,
-        defaultValue: "[]",
-        input: true,
-      },
       studentIds: {
         type: "string",
         required: false,

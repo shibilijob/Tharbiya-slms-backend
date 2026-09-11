@@ -3,6 +3,8 @@ import mongoose, { Document, Schema, Types } from "mongoose";
 export interface IStudent extends Document {
   admissionNumber: string;
   name: string;
+  nameMalayalam?: string;
+  phone?: string;
   dateOfBirth?: Date;
   gender: "MALE" | "FEMALE";
   address?: string;
@@ -30,6 +32,16 @@ const studentSchema = new Schema<IStudent>(
     name: {
       type: String,
       required: true,
+      trim: true,
+    },
+
+    nameMalayalam: {
+      type: String,
+      trim: true,
+    },
+
+    phone: {
+      type: String,
       trim: true,
     },
 

@@ -9,7 +9,6 @@ export interface AuthenticatedUser {
   designation?: string;
   madrasaName?: string;
   assignedClasses?: string;
-  assignedSubjects?: string;
   studentIds?: string;
   avatar?: string;
   image?: string | null;
@@ -49,7 +48,6 @@ export interface RegisterDTO {
   role: UserRole;
   designation?: string | undefined;
   assignedClasses?: string[] | undefined;
-  assignedSubjects?: string[] | undefined;
 }
 
 export interface LinkedStudent {
@@ -71,7 +69,6 @@ export interface MuallimAuthPayload {
   designation?: string;
   madrasaName: string;
   assignedClasses: string[];
-  assignedSubjects: string[];
   avatar?: string;
 }
 
@@ -86,7 +83,6 @@ export interface SadhrAuthPayload {
   isAdmin: boolean;
   isSadhr: boolean;
   assignedClasses: string[];
-  assignedSubjects: string[];
   avatar?: string;
 }
 

@@ -145,12 +145,6 @@ export class AuthService {
       }
     }
 
-    const assignedSubjects = user.assignedSubjects && user.assignedSubjects.length > 0
-      ? user.assignedSubjects
-      : user.role === "SADHR_MUALLIM"
-      ? ["Fiqh", "Quran", "Islamic Studies", "Tafseer"]
-      : ["Quran", "Hifz", "Tajweed", "Fiqh", "Akhlaq"];
-
     let userPayload: StaffAuthPayload;
 
     if (user.role === "SADHR_MUALLIM") {
@@ -165,7 +159,6 @@ export class AuthService {
         isAdmin: true,
         isSadhr: true,
         assignedClasses,
-        assignedSubjects,
       };
     } else {
       userPayload = {
@@ -177,7 +170,6 @@ export class AuthService {
         designation: (user as any).designation || "Usthad & Class Mentor",
         madrasaName: DEFAULT_MADRASA_NAME,
         assignedClasses,
-        assignedSubjects,
       };
     }
 
@@ -247,8 +239,8 @@ export class AuthService {
       admissionNumber: s.admissionNumber,
       gender: s.gender as "MALE" | "FEMALE",
       classId: s.classId?._id?.toString() || "",
-      className: s.classId?.name || "Class 5",
-      division: s.classId?.division || "A",
+      className: s.classId?.name || "",
+      division: s.classId?.division,
     }));
 
     const studentIds = children.map((c) => c.id);
@@ -334,7 +326,6 @@ export class AuthService {
           designation: data.designation || "",
           madrasaName: DEFAULT_MADRASA_NAME,
           assignedClasses: JSON.stringify(data.assignedClasses || []),
-          assignedSubjects: JSON.stringify(data.assignedSubjects || []),
         },
       });
     } catch (err) {

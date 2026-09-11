@@ -95,10 +95,6 @@ export const validateCreateParentInput = (
     }
   }
 
-  if (data.password && (typeof data.password !== "string" || data.password.length < 4)) {
-    return { isValid: false, error: "Password must be at least 4 characters long" };
-  }
-
   return { isValid: true };
 };
 

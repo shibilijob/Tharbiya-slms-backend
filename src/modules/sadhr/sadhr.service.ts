@@ -2,10 +2,18 @@ import User from "../../models/User.js";
 import Student from "../../models/Student.js";
 import Class from "../../models/Class.js";
 import AcademicYear from "../../models/AcademicYear.js";
+import Attendance from "../../models/Attendance.js";
+import HifzRecord from "../../models/HifzRecord.js";
 import DeletedStudent from "../../models/DeletedStudent.js";
 import DeletedUser from "../../models/DeletedUser.js";
+import PracticalEvaluation from "../practical/practical.model.js";
 import { auth } from "../auth/auth.js";
 import { Types } from "mongoose";
+import { AppError } from "../../utils/AppError.js";
+import {
+  generateActiveStudentsPdf,
+  generateParentDetailsPdf,
+} from "../../utils/exportPdf.js";
 import type {
   MadrasaOverviewStats,
   CreateAnnouncementDTO,
@@ -24,15 +32,14 @@ import type {
   PaginatedStudentResultDTO,
 } from "./sadhr.types.js";
 
-const formatMuallimResponse = (user: any): MuallimResponseDTO => ({
+const formatMuallimResponse = (user: any, assignedClassesOverride?: string[]): MuallimResponseDTO => ({
   id: user._id.toString(),
   name: user.name,
   phone: user.phone,
   email: user.email || undefined,
   role: user.role,
   designation: user.designation || "Usthad & Class Mentor",
-  assignedClasses: user.assignedClasses || [],
-  assignedSubjects: user.assignedSubjects || [],
+  assignedClasses: assignedClassesOverride ?? user.assignedClasses ?? [],
   isActive: user.isActive,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
@@ -71,7 +78,6 @@ const formatClassResponse = (cls: any, studentCount: number = 0): ClassResponseD
     classTeacherName: teacherName || "Unassigned",
     classTeacherPhone: teacherPhone,
     studentCount,
-    averageAttendance: 95,
     averageProgress: 88,
     capacity: cls.capacity || 30,
     isActive: cls.isActive ?? true,
@@ -80,24 +86,142 @@ const formatClassResponse = (cls: any, studentCount: number = 0): ClassResponseD
   };
 };
 
+const PARENT_PASSWORD_REGEX = /^dnm\d{4}$/;
+
+const generateParentInitialPassword = (): string => {
+  const digits = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+  const password = `dnm${digits}`;
+
+  if (!PARENT_PASSWORD_REGEX.test(password)) {
+    throw new Error("Generated parent password does not match the required format");
+  }
+
+  return password;
+};
+
+const getClassSortNumber = (classDoc: any): number => {
+  const className = String(classDoc?.name || "");
+  const numericPart = className.match(/\d+/)?.[0];
+  return numericPart ? Number(numericPart) : Number.MAX_SAFE_INTEGER;
+};
+
+const getClassDisplayName = (classDoc: any): string => {
+  if (!classDoc?.name) {
+    return "";
+  }
+
+  return `${classDoc.name}${classDoc.division ? ` ${classDoc.division}` : ""}`;
+};
+
+const getClassAssignmentValue = (classDoc: any): string => {
+  return String(classDoc?.name || "").replace(/^Class\s*/i, "").trim();
+};
+
 export class SadhrService {
+  private async resolveActiveAssignedClasses(assignedClasses: string[] = []) {
+    const uniqueValues = Array.from(
+      new Set(assignedClasses.map((cls) => String(cls || "").trim()).filter(Boolean))
+    );
+
+    const classDocs = [];
+    for (const value of uniqueValues) {
+      let classDoc: any = null;
+
+      if (Types.ObjectId.isValid(value)) {
+        classDoc = await Class.findOne({ _id: new Types.ObjectId(value), isActive: true });
+      }
+
+      if (!classDoc) {
+        const cleanClass = value.replace(/^Class\s*/i, "").trim();
+        classDoc = await Class.findOne({
+          name: { $regex: new RegExp(`^Class\\s*${cleanClass}$|^${cleanClass}$`, "i") },
+          isActive: true,
+        });
+      }
+
+      if (!classDoc) {
+        throw new Error(`Class "${value}" not found or inactive`);
+      }
+
+      classDocs.push(classDoc);
+    }
+
+    return classDocs;
+  }
+
+  private async claimClassesForMuallim(muallimId: Types.ObjectId, assignedClasses: string[] = []) {
+    const classDocs = await this.resolveActiveAssignedClasses(assignedClasses);
+    const requestedClassIds = classDocs.map((classDoc: any) => classDoc._id as Types.ObjectId);
+
+    for (const classDoc of classDocs) {
+      const currentTeacherId = classDoc.classTeacherId?.toString();
+      if (currentTeacherId && currentTeacherId !== muallimId.toString()) {
+        throw new Error("This class is already assigned to another Muallim.");
+      }
+    }
+
+    for (const classDoc of classDocs) {
+      const claimed = await Class.findOneAndUpdate(
+        {
+          _id: classDoc._id,
+          isActive: true,
+          $or: [
+            { classTeacherId: { $exists: false } },
+            { classTeacherId: null },
+            { classTeacherId: muallimId },
+          ],
+        },
+        { $set: { classTeacherId: muallimId } },
+        { new: true }
+      );
+
+      if (!claimed) {
+        throw new Error("This class is already assigned to another Muallim.");
+      }
+    }
+
+    await Class.updateMany(
+      {
+        classTeacherId: muallimId,
+        ...(requestedClassIds.length > 0 ? { _id: { $nin: requestedClassIds } } : {}),
+      },
+      { $unset: { classTeacherId: 1 } }
+    );
+
+    return classDocs.map((classDoc: any) => getClassAssignmentValue(classDoc));
+  }
+
   /**
    * Aggregate high-level executive statistics for Sadhr Muallim
    */
   async getExecutiveStats(): Promise<MadrasaOverviewStats> {
-    const [totalStudents, totalTeachers, totalClasses] = await Promise.all([
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const [totalStudents, totalTeachers, totalClasses, todayAttendance, activeHifzStudentIds, practicalAverage] = await Promise.all([
       Student.countDocuments({ isActive: true }),
       User.countDocuments({ role: { $in: ["MUALLIM", "SADHR_MUALLIM"] }, isActive: true }),
-      Class ? Class.countDocuments({ isActive: true }) : Promise.resolve(7),
+      Class.countDocuments({ isActive: true }),
+      Attendance.find({ date: today }).select("status"),
+      HifzRecord.distinct("studentId"),
+      PracticalEvaluation.aggregate([
+        { $group: { _id: null, averageScore: { $avg: "$overallScore" } } },
+      ]),
     ]);
 
+    const countedAttendance = todayAttendance.filter((record) => record.status !== "HOLIDAY");
+    const presentAttendance = countedAttendance.filter((record) => record.status === "PRESENT").length;
+    const averageAttendanceToday = countedAttendance.length > 0
+      ? Number(((presentAttendance / countedAttendance.length) * 100).toFixed(1))
+      : 0;
+
     return {
-      totalStudents: totalStudents || 128,
-      totalTeachers: totalTeachers || 6,
-      totalClasses: totalClasses || 7,
-      averageAttendanceToday: 94.5,
-      activeHifzStudents: Math.round((totalStudents || 128) * 0.65),
-      monthlyAveragePracticalScore: 8.8,
+      totalStudents,
+      totalTeachers,
+      totalClasses,
+      averageAttendanceToday,
+      activeHifzStudents: activeHifzStudentIds.length,
+      monthlyAveragePracticalScore: Number((practicalAverage[0]?.averageScore || 0).toFixed(1)),
     };
   }
 
@@ -106,24 +230,6 @@ export class SadhrService {
    */
   async getAllClassesWithTeachers(): Promise<ClassResponseDTO[]> {
     if (!Class) return [];
-
-    const count = await Class.countDocuments({ isActive: true });
-    if (count === 0) {
-      // Find first available muallim for initial assignment if any
-      const defaultTeacher = await User.findOne({ role: { $in: ["MUALLIM", "SADHR_MUALLIM"] }, isActive: true });
-      const teacherId = defaultTeacher?._id;
-
-      const defaultClasses = [
-        { name: "Class 1", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-        { name: "Class 2", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-        { name: "Class 3", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-        { name: "Class 4", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-        { name: "Class 5", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-        { name: "Class 6", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-        { name: "Class 7", division: "A", ...(teacherId ? { classTeacherId: teacherId } : {}) },
-      ];
-      await Class.insertMany(defaultClasses);
-    }
 
     const classes = await Class.find({ isActive: true })
       .populate("classTeacherId", "name phone email role designation");
@@ -178,7 +284,11 @@ export class SadhrService {
 
   // create student
   async createStudent(data: any) {
-    const cleanAdmNo = (data.admissionNumber || data.admissionNo || `DN-2026-${Math.floor(100 + Math.random() * 900)}`).trim();
+    const cleanAdmNo = String(data.admissionNumber || data.admissionNo || "").trim();
+
+    if (!cleanAdmNo) {
+      throw new Error("Admission number is required");
+    }
 
     const existingStudent = await Student.findOne({
       admissionNumber: cleanAdmNo,
@@ -202,54 +312,65 @@ export class SadhrService {
 
     // 2. Resolve Class ID
     let classIdObj: Types.ObjectId;
-    const rawClass = String(data.classId || data.class || "Class 1");
+    const rawClass = String(data.classId || data.class || "").trim();
+    if (!rawClass) {
+      throw new Error("Class is required");
+    }
     if (Types.ObjectId.isValid(rawClass)) {
-      classIdObj = new Types.ObjectId(rawClass);
+      const targetClass = await Class.findOne({ _id: rawClass, isActive: true });
+      if (!targetClass) {
+        throw new Error("Class not found or inactive");
+      }
+      classIdObj = targetClass._id as Types.ObjectId;
     } else {
       const cleanClsName = rawClass.replace(/^Class\s*/i, "").trim();
-      let targetClass = await Class.findOne({
+      const targetClass = await Class.findOne({
         name: { $regex: new RegExp(`^Class\\s*${cleanClsName}$|^${cleanClsName}$`, "i") },
         isActive: true,
       });
       if (!targetClass) {
-        targetClass = await Class.findOne({ isActive: true });
-      }
-      if (!targetClass) {
-        targetClass = await Class.create({ name: `Class ${cleanClsName || "1"}`, isActive: true });
+        throw new Error(`Class "${rawClass}" not found`);
       }
       classIdObj = targetClass._id as Types.ObjectId;
     }
 
     // 3. Resolve Parent ID
     let parentIdObj: Types.ObjectId;
-    const rawParent = String(data.parentId || "");
+    const rawParent = String(data.parentId || "").trim();
     if (Types.ObjectId.isValid(rawParent)) {
-      parentIdObj = new Types.ObjectId(rawParent);
-    } else {
-      let defaultParent = await User.findOne({ role: "PARENT", isActive: true });
-      if (!defaultParent) {
-        defaultParent = await User.create({
-          name: "Ali Mundambra",
-          phone: "+91 98471 23456",
-          role: "PARENT",
-          isActive: true,
-        });
+      const parent = await User.findOne({
+        _id: rawParent,
+        role: "PARENT",
+        isActive: true,
+      });
+      if (!parent) {
+        throw new Error("Parent not found or inactive");
       }
-      parentIdObj = defaultParent._id as Types.ObjectId;
+      parentIdObj = parent._id as Types.ObjectId;
+    } else {
+      throw new Error("A valid parent is required");
     }
 
-    const student = await Student.create({
+    const studentPayload: any = {
       name: data.name.trim(),
       admissionNumber: cleanAdmNo,
       gender: data.gender || "MALE",
-      dateOfBirth: data.dateOfBirth || data.dob ? new Date(data.dateOfBirth || data.dob) : new Date("2015-05-14"),
-      address: data.address?.trim() || "Mundambra, Kerala",
       parentId: parentIdObj,
       classId: classIdObj,
       academicYearId: yearId,
       admissionDate: data.admissionDate ? new Date(data.admissionDate) : new Date(),
       isActive: true,
-    });
+    };
+
+    if (data.dateOfBirth || data.dob) {
+      studentPayload.dateOfBirth = new Date(data.dateOfBirth || data.dob);
+    }
+
+    if (data.address?.trim()) {
+      studentPayload.address = data.address.trim();
+    }
+
+    const student = await Student.create(studentPayload);
 
     await student.populate([
       { path: "parentId", select: "name phone email" },
@@ -291,58 +412,7 @@ export class SadhrService {
       ];
     }
 
-    let total = await Student.countDocuments(filter);
-
-    // Auto-seed initial real students into MongoDB if collection is empty
-    if (total === 0 && (!query?.search) && (!query?.classId)) {
-      const year = await this.getOrCreateCurrentAcademicYear();
-      let parent = await User.findOne({ role: "PARENT", isActive: true });
-      if (!parent) {
-        parent = await User.create({
-          name: "Ali Mundambra",
-          phone: "+91 98471 23456",
-          role: "PARENT",
-          isActive: true,
-        });
-      }
-
-      const classes = await Class.find({ isActive: true });
-      const classMap: Record<string, Types.ObjectId> = {};
-      for (const c of classes) {
-        const num = c.name.replace(/^Class\s*/i, "").trim();
-        classMap[num] = c._id as Types.ObjectId;
-      }
-
-      const seedData = [
-        { name: "Muhammad Rayan", admissionNumber: "DN-2026-101", gender: "MALE" as const, classNum: "5" },
-        { name: "Fathima Rida", admissionNumber: "DN-2026-102", gender: "FEMALE" as const, classNum: "5" },
-        { name: "Ameen Rasheed", admissionNumber: "DN-2026-103", gender: "MALE" as const, classNum: "5" },
-        { name: "Zayan Farhan", admissionNumber: "DN-2026-104", gender: "MALE" as const, classNum: "4" },
-        { name: "Aisha Maryam", admissionNumber: "DN-2026-105", gender: "FEMALE" as const, classNum: "3" },
-        { name: "Bilal K.P", admissionNumber: "DN-2026-106", gender: "MALE" as const, classNum: "2" },
-        { name: "Hiba Fathima", admissionNumber: "DN-2026-107", gender: "FEMALE" as const, classNum: "1" },
-      ];
-
-      for (const s of seedData) {
-        const clsId = classMap[s.classNum] || (classes[0]?._id as Types.ObjectId);
-        if (clsId) {
-          await Student.create({
-            name: s.name,
-            admissionNumber: s.admissionNumber,
-            gender: s.gender,
-            parentId: parent._id,
-            classId: clsId,
-            academicYearId: year._id,
-            dateOfBirth: new Date("2015-05-14"),
-            admissionDate: new Date("2024-06-01"),
-            address: "Mundambra, Kerala",
-            isActive: true,
-          });
-        }
-      }
-
-      total = await Student.countDocuments(filter);
-    }
+    const total = await Student.countDocuments(filter);
 
     const students = await Student.find(filter)
       .populate("parentId", "name phone email")
@@ -407,6 +477,14 @@ export class SadhrService {
       student.name = data.name.trim();
     }
 
+    if (data.nameMalayalam !== undefined || data.malayalamName !== undefined) {
+      student.nameMalayalam = String(data.nameMalayalam || data.malayalamName || "").trim();
+    }
+
+    if (data.phone !== undefined || data.parentPhone !== undefined) {
+      student.phone = String(data.phone || data.parentPhone || "").trim();
+    }
+
     if (data.dateOfBirth !== undefined || data.dob !== undefined) {
       student.dateOfBirth = new Date(data.dateOfBirth || data.dob);
     }
@@ -430,7 +508,17 @@ export class SadhrService {
     if (data.parentId !== undefined) {
       const rawParent = String(data.parentId || "");
       if (Types.ObjectId.isValid(rawParent)) {
-        student.parentId = new Types.ObjectId(rawParent);
+        const parent = await User.findOne({
+          _id: rawParent,
+          role: "PARENT",
+          isActive: true,
+        });
+        if (!parent) {
+          throw new Error("Parent not found or inactive");
+        }
+        student.parentId = parent._id as Types.ObjectId;
+      } else if (rawParent.trim()) {
+        throw new Error("Invalid parent ID");
       }
     }
 
@@ -438,16 +526,21 @@ export class SadhrService {
     if (data.classId !== undefined || data.class !== undefined) {
       const rawCls = String(data.classId || data.class || "");
       if (Types.ObjectId.isValid(rawCls)) {
-        student.classId = new Types.ObjectId(rawCls);
+        const targetCls = await Class.findOne({ _id: rawCls, isActive: true });
+        if (!targetCls) {
+          throw new Error("Class not found or inactive");
+        }
+        student.classId = targetCls._id as Types.ObjectId;
       } else if (rawCls) {
         const cleanCls = rawCls.replace(/^Class\s*/i, "").trim();
         const targetCls = await Class.findOne({
           name: { $regex: new RegExp(`^Class\\s*${cleanCls}$|^${cleanCls}$`, "i") },
           isActive: true,
         });
-        if (targetCls) {
-          student.classId = targetCls._id as Types.ObjectId;
+        if (!targetCls) {
+          throw new Error(`Class "${rawCls}" not found`);
         }
+        student.classId = targetCls._id as Types.ObjectId;
       }
     }
 
@@ -461,6 +554,16 @@ export class SadhrService {
     // Admission date
     if (data.admissionDate !== undefined) {
       student.admissionDate = new Date(data.admissionDate);
+    }
+
+    // Ensure required fields before saving
+    if (!student.academicYearId) {
+      const year = await this.getOrCreateCurrentAcademicYear();
+      student.academicYearId = year._id as Types.ObjectId;
+    }
+
+    if (!student.parentId) {
+      throw new Error("Student must be linked to a valid parent");
     }
 
     await student.save();
@@ -558,8 +661,8 @@ export class SadhrService {
     const designation =
       data.designation ||
       (role === "SADHR_MUALLIM" ? "Sadhr Muallim (Sadhr Mudarris)" : "Usthad & Class Mentor");
-    const assignedClasses = Array.isArray(data.assignedClasses) ? data.assignedClasses : [];
-    const assignedSubjects = Array.isArray(data.assignedSubjects) ? data.assignedSubjects : [];
+    const requestedAssignedClasses = Array.isArray(data.assignedClasses) ? data.assignedClasses : [];
+    await this.resolveActiveAssignedClasses(requestedAssignedClasses);
 
     // 3. Create in Mongoose User collection
     const user = await User.create({
@@ -568,11 +671,20 @@ export class SadhrService {
       password,
       role,
       designation,
-      assignedClasses,
-      assignedSubjects,
+      assignedClasses: [],
       isActive: true,
       ...(cleanEmail ? { email: cleanEmail } : {}),
     });
+
+    let assignedClasses: string[] = [];
+    try {
+      assignedClasses = await this.claimClassesForMuallim(user._id as Types.ObjectId, requestedAssignedClasses);
+      user.assignedClasses = assignedClasses;
+      await user.save();
+    } catch (err) {
+      await User.findByIdAndDelete(user._id);
+      throw err;
+    }
 
     // 4. Hook registration with Better Auth
     try {
@@ -587,24 +699,10 @@ export class SadhrService {
           designation,
           madrasaName: "Darunnajath Mundambra",
           assignedClasses: JSON.stringify(assignedClasses),
-          assignedSubjects: JSON.stringify(assignedSubjects),
         },
       });
     } catch (err: any) {
       console.warn("Better Auth registration hook notice:", err?.message || err);
-    }
-
-    // 5. Update Class models if assigned classes exist
-    if (assignedClasses.length > 0 && Class) {
-      try {
-        const classQueries = assignedClasses.map((cls) => new RegExp(`^class\\s*${cls}$|^${cls}$`, "i"));
-        await Class.updateMany(
-          { name: { $in: classQueries }, isActive: true },
-          { $set: { classTeacherId: user._id } }
-        );
-      } catch (err) {
-        console.warn("Notice: Could not sync Class teacher assignments:", err);
-      }
     }
 
     return formatMuallimResponse(user);
@@ -619,7 +717,22 @@ export class SadhrService {
       isActive: true,
     }).sort({ createdAt: -1 });
 
-    return teachers.map((t) => formatMuallimResponse(t));
+    const teacherIds = teachers.map((teacher) => teacher._id);
+    const assignedClasses = await Class.find({
+      classTeacherId: { $in: teacherIds },
+      isActive: true,
+    }).select("name classTeacherId");
+
+    const classesByTeacher = new Map<string, string[]>();
+    for (const classDoc of assignedClasses) {
+      const teacherId = classDoc.classTeacherId?.toString();
+      if (!teacherId) continue;
+      const current = classesByTeacher.get(teacherId) || [];
+      current.push(getClassAssignmentValue(classDoc));
+      classesByTeacher.set(teacherId, current);
+    }
+
+    return teachers.map((t) => formatMuallimResponse(t, classesByTeacher.get(t._id.toString()) || []));
   }
 
   /**
@@ -640,7 +753,12 @@ export class SadhrService {
       throw new Error("Muallim not found or inactive");
     }
 
-    return formatMuallimResponse(user);
+    const assignedClasses = await Class.find({
+      classTeacherId: user._id,
+      isActive: true,
+    }).select("name");
+
+    return formatMuallimResponse(user, assignedClasses.map((classDoc) => getClassAssignmentValue(classDoc)));
   }
 
   /**
@@ -713,32 +831,10 @@ export class SadhrService {
     }
 
     if (data.assignedClasses !== undefined) {
-      user.assignedClasses = Array.isArray(data.assignedClasses) ? data.assignedClasses : [];
-
-      if (Class) {
-        try {
-          // Clear previous assignments
-          await Class.updateMany(
-            { classTeacherId: user._id },
-            { $unset: { classTeacherId: 1 } }
-          );
-
-          // Assign newly assigned classes
-          if (user.assignedClasses.length > 0) {
-            const classQueries = user.assignedClasses.map((cls) => new RegExp(`^class\\s*${cls}$|^${cls}$`, "i"));
-            await Class.updateMany(
-              { name: { $in: classQueries }, isActive: true },
-              { $set: { classTeacherId: user._id } }
-            );
-          }
-        } catch (err) {
-          console.warn("Notice: Could not sync Class teacher assignments:", err);
-        }
-      }
-    }
-
-    if (data.assignedSubjects !== undefined) {
-      user.assignedSubjects = Array.isArray(data.assignedSubjects) ? data.assignedSubjects : [];
+      user.assignedClasses = await this.claimClassesForMuallim(
+        user._id as Types.ObjectId,
+        Array.isArray(data.assignedClasses) ? data.assignedClasses : []
+      );
     }
 
     if (data.isActive !== undefined) {
@@ -780,7 +876,6 @@ export class SadhrService {
       ...(user.email ? { email: user.email } : {}),
       ...(user.designation ? { designation: user.designation } : {}),
       ...(user.assignedClasses ? { assignedClasses: user.assignedClasses } : {}),
-      ...(user.assignedSubjects ? { assignedSubjects: user.assignedSubjects } : {}),
       reason: reason || "Removed from faculty roster by Sadhr Muallim",
     });
 
@@ -839,7 +934,7 @@ export class SadhrService {
       }
     }
 
-    const password = data.password || "123456";
+    const password = generateParentInitialPassword();
 
     // 2. Create in Mongoose User collection
     const user = await User.create({
@@ -865,7 +960,6 @@ export class SadhrService {
           designation: "Parent / Guardian",
           madrasaName: "Darunnajath Mundambra",
           assignedClasses: "[]",
-          assignedSubjects: "[]",
         },
       });
     } catch (err: any) {
@@ -873,6 +967,79 @@ export class SadhrService {
     }
 
     return formatParentResponse(user, []);
+  }
+
+  /**
+   * Generate print-friendly parent credential cards from current active records.
+   */
+  async exportParentDetailsPdf(): Promise<Buffer> {
+    const parents = await User.find({
+      role: "PARENT",
+      isActive: true,
+    })
+      .select("name phone password")
+      .sort({ name: 1 });
+
+    if (parents.length === 0) {
+      throw new AppError("No active parent accounts found to export", 404);
+    }
+
+    return generateParentDetailsPdf(
+      parents.map((parent) => ({
+        name: parent.name,
+        phone: parent.phone,
+        password: parent.password,
+      }))
+    );
+  }
+
+  /**
+   * Generate a print-friendly table of all active students and linked parents.
+   */
+  async exportActiveStudentsPdf(): Promise<Buffer> {
+    const students = await Student.find({ isActive: true })
+      .populate("parentId", "name phone")
+      .populate("classId", "name division")
+      .sort({ name: 1 });
+
+    if (students.length === 0) {
+      throw new AppError("No active students found to export", 404);
+    }
+
+    const sortedStudents = [...students].sort((a: any, b: any) => {
+      const classDiff = getClassSortNumber(a.classId) - getClassSortNumber(b.classId);
+      if (classDiff !== 0) {
+        return classDiff;
+      }
+
+      const classNameDiff = getClassDisplayName(a.classId).localeCompare(
+        getClassDisplayName(b.classId),
+        undefined,
+        { numeric: true, sensitivity: "base" }
+      );
+      if (classNameDiff !== 0) {
+        return classNameDiff;
+      }
+
+      return String(a.name || "").localeCompare(String(b.name || ""), undefined, {
+        sensitivity: "base",
+      });
+    });
+
+    return generateActiveStudentsPdf(
+      sortedStudents.map((student: any) => {
+        const classDoc = student.classId;
+        const parent = student.parentId;
+
+        return {
+          registerNumber: student.admissionNumber,
+          name: student.name,
+          className: getClassDisplayName(classDoc),
+          parentName: parent?.name || "",
+          parentPhone: parent?.phone || "",
+        };
+      })
+    );
   }
 
   /**
@@ -1182,4 +1349,3 @@ export class SadhrService {
 }
 
 export const sadhrService = new SadhrService();
-

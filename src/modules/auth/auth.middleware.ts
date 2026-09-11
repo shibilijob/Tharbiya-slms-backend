@@ -12,7 +12,6 @@ export interface AuthenticatedUser {
   designation?: string;
   madrasaName?: string;
   assignedClasses?: string;
-  assignedSubjects?: string;
   studentIds?: string;
   avatar?: string;
   image?: string | null;
@@ -41,6 +40,31 @@ export const authenticate = async (
     });
 
     if (session && session.user) {
+      const emailOrPhone = session.user.email || (session.user as any).phone;
+      const dbUser = await User.findOne({
+        $or: [
+          ...(Types.ObjectId.isValid(session.user.id) ? [{ _id: new Types.ObjectId(session.user.id) }] : []),
+          ...(emailOrPhone ? [{ email: emailOrPhone.toLowerCase() }, { phone: emailOrPhone }] : []),
+        ],
+      });
+
+      if (dbUser && dbUser.isActive) {
+        req.user = {
+          id: dbUser._id.toString(),
+          name: dbUser.name,
+          email: dbUser.email || session.user.email || "",
+          phone: dbUser.phone || (session.user as any).phone,
+          role: dbUser.role || session.user.role,
+          designation: dbUser.designation || undefined,
+          assignedClasses: JSON.stringify(dbUser.assignedClasses || []),
+          emailVerified: true,
+          createdAt: dbUser.createdAt,
+          updatedAt: dbUser.updatedAt,
+        } as AuthenticatedUser;
+        req.session = session.session;
+        return next();
+      }
+
       req.user = session.user as unknown as AuthenticatedUser;
       req.session = session.session;
       return next();
@@ -72,7 +96,6 @@ export const authenticate = async (
             role: user.role,
             designation: user.designation || undefined,
             assignedClasses: JSON.stringify(user.assignedClasses || []),
-            assignedSubjects: JSON.stringify(user.assignedSubjects || []),
             emailVerified: true,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
@@ -99,6 +122,31 @@ export const requireAuth = asyncHandler(async (
     });
 
     if (session && session.user) {
+      const emailOrPhone = session.user.email || (session.user as any).phone;
+      const dbUser = await User.findOne({
+        $or: [
+          ...(Types.ObjectId.isValid(session.user.id) ? [{ _id: new Types.ObjectId(session.user.id) }] : []),
+          ...(emailOrPhone ? [{ email: emailOrPhone.toLowerCase() }, { phone: emailOrPhone }] : []),
+        ],
+      });
+
+      if (dbUser && dbUser.isActive) {
+        req.user = {
+          id: dbUser._id.toString(),
+          name: dbUser.name,
+          email: dbUser.email || session.user.email || "",
+          phone: dbUser.phone || (session.user as any).phone,
+          role: dbUser.role || session.user.role,
+          designation: dbUser.designation || undefined,
+          assignedClasses: JSON.stringify(dbUser.assignedClasses || []),
+          emailVerified: true,
+          createdAt: dbUser.createdAt,
+          updatedAt: dbUser.updatedAt,
+        } as AuthenticatedUser;
+        req.session = session.session;
+        return next();
+      }
+
       req.user = session.user as unknown as AuthenticatedUser;
       req.session = session.session;
       return next();
@@ -131,7 +179,6 @@ export const requireAuth = asyncHandler(async (
           role: user.role,
           designation: user.designation || undefined,
           assignedClasses: JSON.stringify(user.assignedClasses || []),
-          assignedSubjects: JSON.stringify(user.assignedSubjects || []),
           emailVerified: true,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,

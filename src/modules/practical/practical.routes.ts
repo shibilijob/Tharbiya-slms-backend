@@ -22,4 +22,52 @@ router.get(
   practicalController.getStudentPracticalReport
 );
 
+/**
+ * Month-Wise Practical Scores Endpoints
+ */
+// Record / update single monthly practical score (Upsert)
+router.post(
+  "/scores",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  practicalController.recordMonthlyScore
+);
+
+// Bulk record monthly practical scores
+router.post(
+  "/scores/bulk",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  practicalController.recordBulkMonthlyScores
+);
+
+// Query monthly practical scores (classId, practicalSubjectId, month, year)
+router.get(
+  "/scores",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  practicalController.getMonthlyScores
+);
+
+// Get student's monthly history
+router.get(
+  "/scores/history",
+  requireAuth,
+  practicalController.getStudentMonthlyHistory
+);
+router.get(
+  "/scores/student/:studentId/history",
+  requireAuth,
+  practicalController.getStudentMonthlyHistory
+);
+
+// Delete monthly practical score
+router.delete(
+  "/scores/:id",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  practicalController.deleteMonthlyScore
+);
+
 export default router;
+

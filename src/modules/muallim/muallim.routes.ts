@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { muallimController } from "./muallim.controller.js";
+import { practicalController } from "../practical/practical.controller.js";
 import { requireAuth, requireRole } from "../auth/auth.middleware.js";
 
 const router = Router();
@@ -27,22 +28,17 @@ router.post(
   requireRole(facultyRoles),
   muallimController.markAttendance
 );
-router.get("/attendance/class/:classId", requireAuth, muallimController.getClassAttendance);
-router.get("/attendance/student/:studentId", requireAuth, muallimController.getStudentAttendance);
+router.get("/attendance/class/:classId", requireAuth, requireRole(facultyRoles), muallimController.getClassAttendance);
+router.get("/attendance/student/:studentId", requireAuth, requireRole(facultyRoles), muallimController.getStudentAttendance);
 
 /**
  * Hifz / Quran Memorization & Recitation Operations
  */
-router.post(
-  "/hifz/log",
-  requireAuth,
-  requireRole(facultyRoles),
-  muallimController.logHifzProgress
-);
-router.get("/hifz/student/:studentId", requireAuth, muallimController.getStudentHifzHistory);
+router.get("/hifz/student/:studentId", requireAuth, requireRole(facultyRoles), muallimController.getStudentHifzHistory);
 router.get(
   "/hifz/student/:studentId/summary",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getStudentHifzSummary
 );
 
@@ -55,11 +51,50 @@ router.post(
   requireRole(facultyRoles),
   muallimController.recordPracticalEvaluation
 );
-router.get("/practical/student/:studentId", requireAuth, muallimController.getStudentEvaluations);
+router.get("/practical/student/:studentId", requireAuth, requireRole(facultyRoles), muallimController.getStudentEvaluations);
 router.get(
   "/practical/student/:studentId/report",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getStudentPracticalReport
+);
+
+/**
+ * Month-Wise Practical Scores Operations
+ */
+router.post(
+  "/practical-scores",
+  requireAuth,
+  requireRole(facultyRoles),
+  practicalController.recordMonthlyScore
+);
+router.post(
+  "/practical-scores/bulk",
+  requireAuth,
+  requireRole(facultyRoles),
+  practicalController.recordBulkMonthlyScores
+);
+router.get(
+  "/practical-scores",
+  requireAuth,
+  requireRole(facultyRoles),
+  practicalController.getMonthlyScores
+);
+router.get(
+  "/practical-scores/history",
+  requireAuth,
+  practicalController.getStudentMonthlyHistory
+);
+router.get(
+  "/practical-scores/student/:studentId/history",
+  requireAuth,
+  practicalController.getStudentMonthlyHistory
+);
+router.delete(
+  "/practical-scores/:id",
+  requireAuth,
+  requireRole(facultyRoles),
+  practicalController.deleteMonthlyScore
 );
 
 /**
@@ -74,16 +109,19 @@ router.post(
 router.get(
   "/practical-subjects",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getPracticalSubjects
 );
 router.get(
   "/practical-subjects/class/:classId",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getPracticalSubjects
 );
 router.get(
   "/practical-subjects/:id",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getPracticalSubjectById
 );
 router.patch(
@@ -117,16 +155,19 @@ router.post(
 router.get(
   "/subjects",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getSubjects
 );
 router.get(
   "/subjects/class/:classId",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getSubjects
 );
 router.get(
   "/subjects/:id",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getSubjectById
 );
 router.patch(
@@ -166,31 +207,37 @@ router.post(
 router.get(
   "/achievements",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getAchievements
 );
 router.get(
   "/awards",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getAchievements
 );
 router.get(
   "/achievements/student/:studentId",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getAchievements
 );
 router.get(
   "/awards/student/:studentId",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getAchievements
 );
 router.get(
   "/achievements/:id",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getAchievementById
 );
 router.get(
   "/awards/:id",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getAchievementById
 );
 router.delete(
@@ -218,16 +265,19 @@ router.post(
 router.get(
   "/timetable/periods",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getPeriods
 );
 router.get(
   "/timetable/periods/class/:classId",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getPeriods
 );
 router.get(
   "/timetable/periods/:id",
   requireAuth,
+  requireRole(facultyRoles),
   muallimController.getPeriodById
 );
 router.patch(
