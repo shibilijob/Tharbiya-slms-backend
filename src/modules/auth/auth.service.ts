@@ -209,7 +209,7 @@ export class AuthService {
       throw new AppError("Parent mobile phone number is required.", 400);
     }
 
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ phone, role: "PARENT" });
 
     if (!user) {
       throw new AppError("Invalid credentials: No parent account registered with this mobile number.", 401);

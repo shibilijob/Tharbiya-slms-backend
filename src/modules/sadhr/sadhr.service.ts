@@ -917,19 +917,26 @@ export class SadhrService {
     const cleanPhone = data.phone?.trim();
     const cleanEmail = data.email?.trim() ? data.email.trim().toLowerCase() : undefined;
 
-    // 1. Check for duplicate phone or email
-    const existing = await User.findOne({
-      $or: [
-        { phone: cleanPhone },
-        ...(cleanEmail ? [{ email: cleanEmail }] : []),
-      ],
+    // 1. Parent phone numbers are login credentials, so they must be unique among parents.
+    const existingParent = await User.findOne({
+      phone: cleanPhone,
+      role: "PARENT",
     });
 
-    if (existing) {
-      if (existing.phone === cleanPhone) {
-        throw new Error(`A user account with phone number ${cleanPhone} already exists`);
-      }
-      if (cleanEmail && existing.email === cleanEmail) {
+    if (existingParent) {
+      throw new AppError(
+        `This phone number is already registered to ${existingParent.name}.`,
+        409,
+        {
+          existingParentName: existingParent.name,
+          phone: cleanPhone,
+        }
+      );
+    }
+
+    if (cleanEmail) {
+      const existingEmail = await User.findOne({ email: cleanEmail });
+      if (existingEmail) {
         throw new Error(`A user account with email ${cleanEmail} already exists`);
       }
     }
