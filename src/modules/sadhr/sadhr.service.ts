@@ -199,7 +199,7 @@ export class SadhrService {
     today.setUTCHours(0, 0, 0, 0);
 
     const [totalStudents, totalTeachers, totalClasses, todayAttendance, activeHifzStudentIds, practicalAverage] = await Promise.all([
-      Student.countDocuments({ isActive: true }),
+      Student.countDocuments({ isActive: { $ne: false } }),
       User.countDocuments({ role: { $in: ["MUALLIM", "SADHR_MUALLIM"] }, isActive: true }),
       Class.countDocuments({ isActive: true }),
       Attendance.find({ date: today }).select("status"),
@@ -388,7 +388,7 @@ export class SadhrService {
     query?: PaginationQueryDTO
   ): Promise<PaginatedStudentResultDTO> {
     const page = Math.max(1, Number(query?.page) || 1);
-    const limit = Math.max(1, Math.min(100, Number(query?.limit) || 20));
+    const limit = Math.max(1, Math.min(5000, Number(query?.limit) || 20));
     const skip = (page - 1) * limit;
 
     const filter: any = {};
@@ -399,8 +399,33 @@ export class SadhrService {
       filter.isActive = true;
     }
 
-    if (query?.classId && Types.ObjectId.isValid(query.classId)) {
-      filter.classId = new Types.ObjectId(query.classId);
+    if (query?.classId) {
+      const rawClassId = String(query.classId).trim();
+      if (Types.ObjectId.isValid(rawClassId)) {
+        filter.classId = new Types.ObjectId(rawClassId);
+      } else if (rawClassId && rawClassId.toUpperCase() !== "ALL") {
+        const cleanClsName = rawClassId.replace(/^Class\s*/i, "").trim();
+        const cls = await Class.findOne({
+          name: { $regex: new RegExp(`^Class\\s*${cleanClsName}$|^${cleanClsName}$`, "i") },
+          isActive: true,
+        });
+
+        if (cls) {
+          filter.classId = cls._id;
+        } else {
+          return {
+            students: [],
+            pagination: {
+              total: 0,
+              page,
+              limit,
+              totalPages: 1,
+              hasPrevPage: false,
+              hasNextPage: false,
+            },
+          };
+        }
+      }
     }
 
     if (query?.search && typeof query.search === "string" && query.search.trim()) {
