@@ -117,6 +117,28 @@ const getClassAssignmentValue = (classDoc: any): string => {
   return String(classDoc?.name || "").replace(/^Class\s*/i, "").trim();
 };
 
+const normalizePhoneForLookup = (phone?: string): string => {
+  return String(phone || "").replace(/\D/g, "");
+};
+
+const escapeRegex = (value: string): string => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+const findParentByPhone = async (phone: string, activeOnly = true) => {
+  const normalizedPhone = normalizePhoneForLookup(phone);
+  if (normalizedPhone.length < 5) {
+    return null;
+  }
+
+  const parents = await User.find({
+    role: "PARENT",
+    ...(activeOnly ? { isActive: true } : {}),
+  }).select("name phone email password role isActive createdAt updatedAt");
+
+  return parents.find((parent) => normalizePhoneForLookup(parent.phone) === normalizedPhone) || null;
+};
+
 export class SadhrService {
   private async resolveActiveAssignedClasses(assignedClasses: string[] = []) {
     const uniqueValues = Array.from(
@@ -348,7 +370,21 @@ export class SadhrService {
       }
       parentIdObj = parent._id as Types.ObjectId;
     } else {
-      throw new Error("A valid parent is required");
+      const parentPhone = String(data.parentPhone || "").trim();
+      if (parentPhone.length < 5) {
+        throw new Error("A valid parent is required");
+      }
+
+      const existingParent = await findParentByPhone(parentPhone);
+      if (existingParent) {
+        parentIdObj = existingParent._id as Types.ObjectId;
+      } else {
+        const createdParent = await this.createParent({
+          name: String(data.parentName || "Parent / Guardian").trim(),
+          phone: parentPhone,
+        });
+        parentIdObj = new Types.ObjectId(createdParent.id);
+      }
     }
 
     const studentPayload: any = {
@@ -530,7 +566,7 @@ export class SadhrService {
     }
 
     // Parent
-    if (data.parentId !== undefined) {
+    if (data.parentId !== undefined || data.parentPhone !== undefined) {
       const rawParent = String(data.parentId || "");
       if (Types.ObjectId.isValid(rawParent)) {
         const parent = await User.findOne({
@@ -544,6 +580,22 @@ export class SadhrService {
         student.parentId = parent._id as Types.ObjectId;
       } else if (rawParent.trim()) {
         throw new Error("Invalid parent ID");
+      } else if (data.parentPhone !== undefined) {
+        const parentPhone = String(data.parentPhone || "").trim();
+        if (parentPhone.length < 5) {
+          throw new Error("A valid parent is required");
+        }
+
+        const existingParent = await findParentByPhone(parentPhone);
+        if (existingParent) {
+          student.parentId = existingParent._id as Types.ObjectId;
+        } else {
+          const createdParent = await this.createParent({
+            name: String(data.parentName || "Parent / Guardian").trim(),
+            phone: parentPhone,
+          });
+          student.parentId = new Types.ObjectId(createdParent.id);
+        }
       }
     }
 
@@ -942,11 +994,12 @@ export class SadhrService {
     const cleanPhone = data.phone?.trim();
     const cleanEmail = data.email?.trim() ? data.email.trim().toLowerCase() : undefined;
 
+    if (!cleanPhone || normalizePhoneForLookup(cleanPhone).length < 5) {
+      throw new AppError("Valid mobile phone number is required", 400);
+    }
+
     // 1. Parent phone numbers are login credentials, so they must be unique among parents.
-    const existingParent = await User.findOne({
-      phone: cleanPhone,
-      role: "PARENT",
-    });
+    const existingParent = await findParentByPhone(cleanPhone, false);
 
     if (existingParent) {
       throw new AppError(
@@ -999,6 +1052,55 @@ export class SadhrService {
     }
 
     return formatParentResponse(user, []);
+  }
+
+  /**
+   * Search active parent users by name or phone number for student enrollment.
+   */
+  async searchParents(query: { name?: string; phone?: string }): Promise<ParentResponseDTO[]> {
+    const cleanName = String(query.name || "").trim();
+    const cleanPhone = String(query.phone || "").trim();
+    const normalizedPhone = normalizePhoneForLookup(cleanPhone);
+
+    if (cleanName.length < 2 && normalizedPhone.length < 3) {
+      return [];
+    }
+
+    const parents = await User.find({
+      role: "PARENT",
+      isActive: true,
+      ...(cleanName.length >= 2
+        ? { name: { $regex: new RegExp(escapeRegex(cleanName), "i") } }
+        : {}),
+    })
+      .select("name phone email password role isActive createdAt updatedAt")
+      .sort({ name: 1 })
+      .limit(20);
+
+    const results = new Map<string, any>();
+
+    for (const parent of parents) {
+      results.set(parent._id.toString(), parent);
+    }
+
+    if (normalizedPhone.length >= 3) {
+      const phoneMatches = await User.find({
+        role: "PARENT",
+        isActive: true,
+      })
+        .select("name phone email password role isActive createdAt updatedAt")
+        .sort({ name: 1 });
+
+      for (const parent of phoneMatches) {
+        if (normalizePhoneForLookup(parent.phone).includes(normalizedPhone)) {
+          results.set(parent._id.toString(), parent);
+        }
+      }
+    }
+
+    return Array.from(results.values())
+      .slice(0, 20)
+      .map((parent) => formatParentResponse(parent, []));
   }
 
   /**
