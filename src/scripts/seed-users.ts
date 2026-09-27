@@ -15,46 +15,7 @@ const SEED_USERS = [
     designation: "Sadhr Muallim (Sadhr Mudarris)",
     assignedClasses: JSON.stringify(["1", "8", "12"]),
   },
-  {
-    name: "Saidalavi Saadi",
-    email: "saidalavi@yopmail.com",
-    phone: "0000000002",
-    password: "saidalavi@yopmail.com",
-    role: "MUALLIM" as const,
-    isActive: true,
-    designation: "Senior Usthad & Hifz Section Supervisor",
-    assignedClasses: JSON.stringify(["3", "7", "11"]),
-  },
-  {
-    name: "Shibili Ahsani",
-    email: "shibilijob@gmail.com",
-    phone: "0000000003",
-    password: "shibili@yopmail.com",
-    role: "MUALLIM" as const,
-    isActive: true,
-    designation: "Senior Usthad & Class 4 Mentor",
-    assignedClasses: JSON.stringify(["4", "6", "10"]),
-  },
-  {
-    name: "Misbahudheen Saqafi",
-    email: "misbahudheen@yopmail.com",
-    phone: "0000000004",
-    password: "misbahudheen@yopmail.com",
-    role: "MUALLIM" as const,
-    isActive: true,
-    designation: "Arabic & Islamic Studies Specialist",
-    assignedClasses: JSON.stringify(["2", "5", "9"]),
-  },
-  {
-    name: "Ali Mundambra",
-    email: "ali.mundambra@gmail.com",
-    phone: "9847123456",
-    password: "123456",
-    role: "PARENT" as const,
-    isActive: true,
-    designation: "Parent / Guardian",
-    assignedClasses: JSON.stringify([]),
-  },
+
 ];
 
 async function seed() {

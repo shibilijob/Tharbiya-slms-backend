@@ -322,6 +322,20 @@ export class SadhrController {
   });
 
   /**
+   * Search parent accounts by name or phone number for student enrollment.
+   */
+  searchParents = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const phone = String(req.query.phone || "");
+    const name = String(req.query.name || "");
+    const parents = await sadhrService.searchParents({ name, phone });
+
+    return res.status(200).json({
+      success: true,
+      data: parents,
+    });
+  });
+
+  /**
    * Download all active parent login credential cards.
    */
   exportParentDetails = asyncHandler(async (_req: AuthenticatedRequest, res: Response) => {

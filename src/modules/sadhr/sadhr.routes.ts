@@ -190,6 +190,14 @@ router.get(
   sadhrController.getAllParents
 );
 
+// Search Parents by phone for student enrollment
+router.get(
+  "/parents/search",
+  requireAuth,
+  requireRole(["SADHR_MUALLIM"]),
+  sadhrController.searchParents
+);
+
 // Export active parent login credential cards as PDF
 router.get(
   "/parents/export",
