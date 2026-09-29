@@ -28,7 +28,7 @@ export async function sendBrevoEmail(options: SendEmailOptions): Promise<{ succe
     console.warn("HTML Preview generated.");
     console.warn("Add BREVO_API_KEY to your .env file to send live emails via Brevo.");
     console.warn("=======================================================\n");
-    return { success: true, messageId: `mock_${Date.now()}` };
+    throw new Error("Email service is not configured. Please contact the administrator.");
   }
 
   try {

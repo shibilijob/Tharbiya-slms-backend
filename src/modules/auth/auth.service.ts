@@ -1,4 +1,5 @@
-import { auth } from "./auth.js";
+import { randomUUID } from "node:crypto";
+import { auth, mongoClient, resetEmailDispatchResults } from "./auth.js";
 import User, { type IUser } from "../../models/User.js";
 import Student from "../../models/Student.js";
 import Class from "../../models/Class.js";
@@ -398,16 +399,47 @@ export class AuthService {
     const cleanEmail = email.trim().toLowerCase();
     const verified = await this.verifyMuallim(cleanEmail);
     const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
+    const dispatchId = randomUUID();
+    const authUser = await mongoClient.db().collection("user").findOne(
+      { email: cleanEmail },
+      { projection: { _id: 1 } }
+    );
+
+    if (!authUser) {
+      throw new AppError(
+        "Password reset email could not be sent because this faculty account is not linked to the reset-password service. Please contact the administrator.",
+        500
+      );
+    }
 
     try {
+      resetEmailDispatchResults.delete(dispatchId);
+      resetEmailDispatchResults.delete(cleanEmail);
+
       // Trigger Better Auth password reset which generates the secure token and calls Brevo email handler
       await auth.api.requestPasswordReset({
         body: {
           email: cleanEmail,
-          redirectTo: `${clientUrl}/reset-password`,
+          redirectTo: `${clientUrl}/reset-password?dispatchId=${dispatchId}`,
         },
       });
+
+      const dispatchResult =
+        resetEmailDispatchResults.get(dispatchId) ||
+        resetEmailDispatchResults.get(cleanEmail);
+
+      resetEmailDispatchResults.delete(dispatchId);
+      resetEmailDispatchResults.delete(cleanEmail);
+
+      if (!dispatchResult?.success) {
+        throw new AppError(
+          dispatchResult?.error || "Failed to dispatch password reset email. Please try again.",
+          500
+        );
+      }
     } catch (baErr: any) {
+      resetEmailDispatchResults.delete(dispatchId);
+      resetEmailDispatchResults.delete(cleanEmail);
       console.error("Better Auth requestPasswordReset error:", baErr);
       throw new AppError(
         baErr?.message || "Failed to dispatch password reset email. Please try again.",
