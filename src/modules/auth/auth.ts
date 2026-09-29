@@ -9,6 +9,19 @@ const mongoURI = process.env.MONGO_URI || "mongodb://localhost:27017/tharbiya";
 export const mongoClient = new MongoClient(mongoURI);
 const db = mongoClient.db();
 
+export const resetEmailDispatchResults = new Map<string, { success: boolean; error?: string }>();
+
+const getResetDispatchId = (url: string) => {
+  try {
+    const resetUrl = new URL(url);
+    const callbackUrl = resetUrl.searchParams.get("callbackURL");
+    if (!callbackUrl) return null;
+    return new URL(callbackUrl).searchParams.get("dispatchId");
+  } catch {
+    return null;
+  }
+};
+
 export const auth = betterAuth({
   database: mongodbAdapter(db, {
     client: mongoClient,
@@ -34,13 +47,23 @@ export const auth = betterAuth({
       const resetLink = url && url.includes("http")
         ? url
         : `${clientUrl}/reset-password?token=${token}`;
+      const dispatchKey = getResetDispatchId(url) || user.email.trim().toLowerCase();
 
       console.log(`📧 [Better Auth] Triggering Brevo password reset email for ${user.email}`);
-      await sendBrevoEmail({
+      try {
+        await sendBrevoEmail({
         to: [{ email: user.email, name: user.name || "Usthad" }],
         subject: "Password Reset Request — Darunnajath Tharbiyah",
-        html: generateResetPasswordEmailHtml(user.name || "Usthad", resetLink),
-      });
+          html: generateResetPasswordEmailHtml(user.name || "Usthad", resetLink),
+        });
+        resetEmailDispatchResults.set(dispatchKey, { success: true });
+      } catch (error: any) {
+        resetEmailDispatchResults.set(dispatchKey, {
+          success: false,
+          error: error?.message || "Failed to send password reset email.",
+        });
+        throw error;
+      }
     },
   },
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
