@@ -2,6 +2,7 @@ import { Router } from "express";
 import { muallimController } from "./muallim.controller.js";
 import { practicalController } from "../practical/practical.controller.js";
 import { requireAuth, requireRole } from "../auth/auth.middleware.js";
+import { assessmentController } from "./assessment.controller.js";
 
 const router = Router();
 
@@ -11,6 +12,9 @@ const facultyRoles = ["MUALLIM", "SADHR_MUALLIM"];
  * Muallim Dashboard & Classroom
  */
 router.get("/dashboard", requireAuth, requireRole(facultyRoles), muallimController.getDashboard);
+router.get("/assessments", requireAuth, requireRole([...facultyRoles, "PARENT"]), assessmentController.list);
+router.post("/assessments", requireAuth, requireRole(facultyRoles), assessmentController.save);
+router.delete("/assessments/:id", requireAuth, requireRole(facultyRoles), assessmentController.remove);
 router.get("/classes", requireAuth, requireRole(facultyRoles), muallimController.getAssignedClasses);
 router.get(
   "/classes/:classId/students",

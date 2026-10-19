@@ -202,6 +202,12 @@ export class PracticalScoreService {
   ): Promise<PracticalScoreResponseDTO[]> {
     const filter: any = {};
 
+    if (teacherId) {
+      const context = await muallimService.getTeacherContext(teacherId);
+      if (context.assignedClassIds.length === 0) return [];
+      filter.classId = { $in: context.assignedClassIds };
+    }
+
     if (query.classId) {
       const classObjectId = await this.resolveClassObjectId(query.classId);
 
@@ -263,6 +269,8 @@ export class PracticalScoreService {
     if (!mongoose.Types.ObjectId.isValid(studentId)) {
       throw new Error("Invalid student ID");
     }
+
+    if (teacherId) await muallimService.assertStudentAssigned(teacherId, studentId);
 
     const docs = await PracticalScore.find({
       studentId: new mongoose.Types.ObjectId(studentId),

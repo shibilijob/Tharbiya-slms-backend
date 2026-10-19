@@ -58,9 +58,9 @@ router.delete("/records/:id", requireAuth, requireRole(facultyRoles), hifzContro
 // =========================================================================
 
 // Get student's Hifz log history
-router.get("/student/:studentId", requireAuth, hifzController.getStudentHifzHistory);
+router.get("/student/:studentId", requireAuth, requireRole(facultyRoles), hifzController.getStudentHifzHistory);
 
 // Get student's overall Hifz summary
-router.get("/student/:studentId/summary", requireAuth, hifzController.getStudentHifzSummary);
+router.get("/student/:studentId/summary", requireAuth, requireRole(facultyRoles), hifzController.getStudentHifzSummary);
 
 export default router;

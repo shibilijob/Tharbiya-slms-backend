@@ -4,6 +4,7 @@ import { practicalService } from "./practical.service.js";
 import { practicalScoreService } from "./practicalScore.service.js";
 import { validatePracticalEvaluationInput } from "./practical.validators.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
+import { muallimService } from "../muallim/muallim.service.js";
 
 export class PracticalController {
   /**
@@ -32,6 +33,7 @@ export class PracticalController {
    */
   getStudentEvaluations = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId);
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
 
     const evaluations = await practicalService.getStudentEvaluations(studentId);
     return res.json({
@@ -45,6 +47,7 @@ export class PracticalController {
    */
   getStudentPracticalReport = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId);
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
 
     const report = await practicalService.getStudentPracticalReport(studentId);
     return res.json({

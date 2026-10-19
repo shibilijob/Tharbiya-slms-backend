@@ -10,6 +10,7 @@ import TimetablePeriod from "../../models/TimetablePeriod.js";
 import Student from "../../models/Student.js";
 import Class from "../../models/Class.js";
 import User from "../../models/User.js";
+import { AppError } from "../../utils/AppError.js";
 import type {
   AttendanceStatus,
   MarkClassAttendanceDTO,
@@ -154,19 +155,16 @@ export class MuallimService {
   async markClassAttendance(data: MarkClassAttendanceDTO, markedById: string) {
     const classObjectId = await this.resolveClassObjectId(data.classId);
 
-    // Verify teacher authorization if markedById is a teacher
     if (markedById && mongoose.Types.ObjectId.isValid(markedById)) {
-      const teacher = await User.findById(markedById);
-      if (teacher && teacher.role === "MUALLIM") {
-        const context = await this.getTeacherContext(markedById);
-        const isAllowed = this.isClassAssignedToTeacher(
-          classObjectId.toString(),
-          context.assignedClassIds,
-          context.assignedClassNames
-        );
-        if (!isAllowed) {
-          throw new Error("Unauthorized: You can only record attendance for your assigned classes");
-        }
+      await this.assertClassAssigned(markedById, classObjectId.toString());
+      const studentIds = data.records.map((record) => record.studentId);
+      const studentsInClass = await Student.countDocuments({
+        _id: { $in: studentIds.filter((id) => mongoose.Types.ObjectId.isValid(id)) },
+        classId: classObjectId,
+        isActive: true,
+      });
+      if (studentsInClass !== studentIds.length) {
+        throw new AppError("Attendance includes students outside the assigned class", 403);
       }
     }
 
@@ -225,8 +223,9 @@ export class MuallimService {
   /**
    * Get class attendance for a specific date
    */
-  async getClassAttendanceByDate(classId: string, dateStr: string) {
+  async getClassAttendanceByDate(classId: string, dateStr: string, muallimId?: string) {
     const classObjectId = await this.resolveClassObjectId(classId);
+    if (muallimId) await this.assertClassAssigned(muallimId, classObjectId.toString());
     const cleanDateStr =
       typeof dateStr === "string"
         ? dateStr.split("T")[0]
@@ -259,6 +258,11 @@ export class MuallimService {
   }) {
     const query: any = {};
 
+    if ((filters.role === "MUALLIM" || filters.role === "SADHR_MUALLIM") && filters.userId) {
+      const context = await this.getTeacherContext(filters.userId);
+      query.classId = { $in: context.assignedClassIds };
+    }
+
     if (filters.studentId && mongoose.Types.ObjectId.isValid(filters.studentId)) {
       query.studentId = new mongoose.Types.ObjectId(filters.studentId);
     }
@@ -266,19 +270,24 @@ export class MuallimService {
     if (filters.classId) {
       try {
         const classObjectId = await this.resolveClassObjectId(filters.classId);
+        if ((filters.role === "MUALLIM" || filters.role === "SADHR_MUALLIM") && filters.userId) {
+          await this.assertClassAssigned(filters.userId, classObjectId.toString());
+        }
         query.classId = classObjectId;
       } catch {
         return [];
       }
-    } else if (filters.role === "MUALLIM" && filters.userId) {
-      const context = await this.getTeacherContext(filters.userId);
-      if (context.assignedClassIds.length > 0) {
-        query.classId = { $in: context.assignedClassIds };
-      }
-    } else if (filters.role === "PARENT" && filters.userId && mongoose.Types.ObjectId.isValid(filters.userId)) {
+    }
+
+    if (filters.role === "PARENT" && filters.userId && mongoose.Types.ObjectId.isValid(filters.userId)) {
       const parentStudents = await Student.find({ parentId: new mongoose.Types.ObjectId(filters.userId) }).select("_id");
-      const studentObjectIds = parentStudents.map((s) => s._id as mongoose.Types.ObjectId);
+      let studentObjectIds = parentStudents.map((s) => s._id as mongoose.Types.ObjectId);
+      if (filters.studentId && mongoose.Types.ObjectId.isValid(filters.studentId)) {
+        studentObjectIds = studentObjectIds.filter((id) => id.toString() === filters.studentId);
+      }
       query.studentId = { $in: studentObjectIds };
+    } else if (filters.role !== "PARENT" && filters.role !== "MUALLIM" && filters.role !== "SADHR_MUALLIM") {
+      return [];
     }
 
     if (filters.date) {
@@ -441,16 +450,11 @@ export class MuallimService {
     }
 
     if (evaluatedById) {
-      const context = await this.getTeacherContext(evaluatedById);
-      const isAllowed = this.isClassAssignedToTeacher(
-        targetClassId,
-        context.assignedClassIds,
-        context.assignedClassNames
-      );
-      if (!isAllowed) {
-        throw new Error("Unauthorized: You can only record evaluations for your assigned classes");
-      }
+      await this.assertClassAssigned(evaluatedById, targetClassId);
     }
+
+    const student = await Student.findOne({ _id: data.studentId, classId: targetClassId, isActive: true });
+    if (!student) throw new AppError("Student is not enrolled in the selected class", 403);
 
     // Validate subject-specific maximum score against PracticalSubject
     const activeSubjects = await PracticalSubject.find({
@@ -645,25 +649,24 @@ export class MuallimService {
 
     let classes: any[] = [];
 
-    if (user.role === "SADHR_MUALLIM") {
-      // Sadhr Muallim (Headmaster) oversees all classes
-      classes = await Class.find({ isActive: true });
+    // Sadhr's class access is temporary operational scope. It is derived from
+    // active classes on each request and never writes the user's assignment list.
+    if ((user as any).role === "SADHR_MUALLIM") {
+      classes = await Class.find({ isActive: true }).sort({ name: 1 });
     } else if (normalizedClassStrings.length > 0) {
       // User has explicitly configured assignedClasses (e.g. ["7", "6"])
       classes = await Class.find({ name: { $in: classQueries }, isActive: true });
-
     } else {
-      // Normal Muallim without explicit assignedClasses in user profile: fallback to classTeacherId or Timetable
+      // Class teacher links are a trusted assignment source. Only regular Muallims
+      // may fall back to timetable assignments; an unassigned Sadhr gets no classes.
       const orConditions: any[] = [{ classTeacherId: user._id }];
       const timetableClasses = await TimetablePeriod.find({
         teacherId: user._id,
         isActive: true,
       }).distinct("classId");
-
       if (timetableClasses.length > 0) {
         orConditions.push({ _id: { $in: timetableClasses } });
       }
-
       classes = await Class.find({ $or: orConditions, isActive: true });
     }
 
@@ -719,6 +722,21 @@ export class MuallimService {
     return context.assignedClasses;
   }
 
+  async assertClassAssigned(muallimId: string, classId: string) {
+    const context = await this.getTeacherContext(muallimId);
+    const allowed = this.isClassAssignedToTeacher(classId, context.assignedClassIds, context.assignedClassNames);
+    if (!allowed) throw new AppError("Class is not assigned to this Muallim", 403);
+    return context;
+  }
+
+  async assertStudentAssigned(muallimId: string, studentId: string) {
+    if (!mongoose.Types.ObjectId.isValid(studentId)) throw new AppError("Invalid student ID", 400);
+    const student = await Student.findOne({ _id: studentId, isActive: true }).select("classId");
+    if (!student) throw new AppError("Student not found", 404);
+    const context = await this.assertClassAssigned(muallimId, String(student.classId || ""));
+    return student;
+  }
+
   /**
    * Get all active students enrolled in a specific class
    */
@@ -763,9 +781,14 @@ export class MuallimService {
   /**
    * Get executive stats for the logged-in Muallim dashboard
    */
-  async getMuallimDashboardStats(muallimId: string): Promise<MuallimDashboardStats> {
+  async getMuallimDashboardStats(muallimId: string, selectedClassId?: string): Promise<MuallimDashboardStats> {
     const assignedClasses = await this.getAssignedClasses(muallimId);
-    const classIds = assignedClasses.map((c) => c._id);
+    let classIds = assignedClasses.map((c) => c._id as mongoose.Types.ObjectId);
+    if (selectedClassId) {
+      const selected = await this.resolveClassObjectId(selectedClassId);
+      await this.assertClassAssigned(muallimId, selected.toString());
+      classIds = [selected];
+    }
 
     const totalStudents = await Student.countDocuments({
       classId: { $in: classIds },
@@ -797,6 +820,7 @@ export class MuallimService {
     const awardsGivenCount = mongoose.Types.ObjectId.isValid(muallimId)
       ? await Achievement.countDocuments({
           awardedById: new mongoose.Types.ObjectId(muallimId),
+          classId: { $in: classIds },
           isActive: true,
         })
       : 0;
@@ -1532,7 +1556,7 @@ export class MuallimService {
       }
     }
 
-    const classId = data.classId || (student.classId ? student.classId.toString() : undefined);
+    const classId = student.classId ? student.classId.toString() : undefined;
 
     const achievement = await Achievement.create({
       studentId: student._id,
@@ -1625,16 +1649,9 @@ export class MuallimService {
       throw new Error("Achievement / Award not found or inactive");
     }
 
-    if (muallimId && record.classId) {
-      const context = await this.getTeacherContext(muallimId);
-      const isAllowed = this.isClassAssignedToTeacher(
-        record.classId._id || record.classId,
-        context.assignedClassIds,
-        context.assignedClassNames
-      );
-      if (!isAllowed) {
-        throw new Error("Unauthorized: Achievement belongs to a class not assigned to you");
-      }
+    if (muallimId) {
+      await this.assertStudentAssigned(muallimId, String(record.studentId?._id || record.studentId));
+      if (record.classId) await this.assertClassAssigned(muallimId, String(record.classId._id || record.classId));
     }
 
     return formatAchievementResponse(record);
@@ -1660,16 +1677,9 @@ export class MuallimService {
       throw new Error("Achievement / Award not found or already deleted");
     }
 
-    if (muallimId && record.classId) {
-      const context = await this.getTeacherContext(muallimId);
-      const isAllowed = this.isClassAssignedToTeacher(
-        record.classId,
-        context.assignedClassIds,
-        context.assignedClassNames
-      );
-      if (!isAllowed) {
-        throw new Error("Unauthorized: You do not have permission to delete this achievement");
-      }
+    if (muallimId) {
+      await this.assertStudentAssigned(muallimId, String(record.studentId));
+      if (record.classId) await this.assertClassAssigned(muallimId, String(record.classId));
     }
 
     // Soft delete
@@ -1723,17 +1733,12 @@ export class MuallimService {
 
     if (muallimId) {
       const context = await this.getTeacherContext(muallimId);
-      const isSuperUser = (context.user?.role as string) === "SADHR_MUALLIM" || (context.user?.role as string) === "ADMIN";
-      if (!isSuperUser) {
-        const isAllowed = this.isClassAssignedToTeacher(
-          resolvedClassId,
-          context.assignedClassIds,
-          context.assignedClassNames
-        );
-        if (!isAllowed) {
-          throw new Error("Unauthorized: You can only configure timetable for your assigned classes");
-        }
-      }
+      const isAllowed = this.isClassAssignedToTeacher(
+        resolvedClassId,
+        context.assignedClassIds,
+        context.assignedClassNames
+      );
+      if (!isAllowed) throw new AppError("You can only configure timetable for your assigned classes", 403);
     }
 
     // Check for duplicate period on the same day for this class
@@ -1787,25 +1792,17 @@ export class MuallimService {
 
     if (filter?.muallimId) {
       const context = await this.getTeacherContext(filter.muallimId);
-      const isSuperUser = (context.user?.role as string) === "SADHR_MUALLIM" || (context.user?.role as string) === "ADMIN";
+      if (context.assignedClasses.length === 0) return [];
 
-      if (!isSuperUser) {
-        if (context.assignedClasses.length === 0) {
-          return [];
-        }
-
-        if (filter.classId && filter.classId.trim() !== "" && filter.classId.toUpperCase() !== "ALL") {
-          const isAllowed = this.isClassAssignedToTeacher(
-            filter.classId,
-            context.assignedClassIds,
-            context.assignedClassNames
-          );
-          if (!isAllowed) {
-            return [];
-          }
-        } else {
-          query.classId = { $in: context.assignedClassIds };
-        }
+      if (filter.classId && filter.classId.trim() !== "" && filter.classId.toUpperCase() !== "ALL") {
+        const isAllowed = this.isClassAssignedToTeacher(
+          filter.classId,
+          context.assignedClassIds,
+          context.assignedClassNames
+        );
+        if (!isAllowed) return [];
+      } else {
+        query.classId = { $in: context.assignedClassIds };
       }
     }
 

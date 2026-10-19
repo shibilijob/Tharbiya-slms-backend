@@ -12,8 +12,8 @@ export class AttendanceService {
   /**
    * Get class attendance for a specific date
    */
-  async getClassAttendanceByDate(classId: string, dateStr: string) {
-    return muallimService.getClassAttendanceByDate(classId, dateStr);
+  async getClassAttendanceByDate(classId: string, dateStr: string, muallimId?: string) {
+    return muallimService.getClassAttendanceByDate(classId, dateStr, muallimId);
   }
 
   /**

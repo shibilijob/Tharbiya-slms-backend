@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import type { AuthenticatedRequest } from "../auth/auth.middleware.js";
 import { hifzService } from "./hifz.service.js";
+import { muallimService } from "../muallim/muallim.service.js";
 import {
   validateCreateHifzTargetInput,
   validateUpdateHifzTargetInput,
@@ -217,6 +218,7 @@ export class HifzController {
    */
   getStudentHifzHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId);
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
 
     const history = await hifzService.getStudentHifzHistory(studentId, limit);
@@ -231,6 +233,7 @@ export class HifzController {
    */
   getStudentHifzSummary = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId);
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
 
     const summary = await hifzService.getStudentHifzSummary(studentId);
     return res.json({

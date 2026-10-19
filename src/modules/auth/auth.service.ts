@@ -4,6 +4,7 @@ import User, { type IUser } from "../../models/User.js";
 import Student from "../../models/Student.js";
 import Class from "../../models/Class.js";
 import { AppError } from "../../utils/AppError.js";
+import { issueSessionToken } from "./sessionToken.js";
 import type {
   RegisterDTO,
   LoginDTO,
@@ -46,7 +47,7 @@ export class AuthService {
     // 1. Check direct password match against Mongoose record
     if (user.password && user.password === pwd) {
       return {
-        token: `sess_${user._id}_${Date.now()}`,
+        token: issueSessionToken(user._id.toString()),
         user: {
           id: user._id.toString(),
           name: user.name,
@@ -81,7 +82,13 @@ export class AuthService {
       throw new AppError("Invalid credentials: Incorrect password.", 401);
     }
 
-    return session;
+    return {
+      token: issueSessionToken(user._id.toString()),
+      user: {
+        id: user._id.toString(), name: user.name, email: user.email || "",
+        role: user.role, phone: user.phone,
+      },
+    };
   }
 
   /**

@@ -27,6 +27,20 @@ export interface AuthenticatedRequest extends Request {
 
 import User from "../../models/User.js";
 import { Types } from "mongoose";
+import { verifySessionToken } from "./sessionToken.js";
+
+const resolveBearerUser = async (token: string): Promise<AuthenticatedUser | null> => {
+  const userId = verifySessionToken(token);
+  if (!userId) return null;
+  const user = await User.findById(userId);
+  if (!user || !user.isActive) return null;
+  return {
+    id: user._id.toString(), name: user.name, email: user.email || "", phone: user.phone,
+    role: user.role, designation: user.designation || undefined,
+    assignedClasses: JSON.stringify(user.assignedClasses || []), emailVerified: true,
+    createdAt: user.createdAt, updatedAt: user.updatedAt,
+  } as AuthenticatedUser;
+};
 
 export const authenticate = async (
   req: AuthenticatedRequest,
@@ -54,7 +68,7 @@ export const authenticate = async (
           name: dbUser.name,
           email: dbUser.email || session.user.email || "",
           phone: dbUser.phone || (session.user as any).phone,
-          role: dbUser.role || session.user.role,
+          role: dbUser.role,
           designation: dbUser.designation || undefined,
           assignedClasses: JSON.stringify(dbUser.assignedClasses || []),
           emailVerified: true,
@@ -65,44 +79,17 @@ export const authenticate = async (
         return next();
       }
 
-      req.user = session.user as unknown as AuthenticatedUser;
-      req.session = session.session;
+      // The Better Auth principal must also resolve to an active application user;
+      // never trust its client-supplied role or fall back to an unlinked session.
       return next();
     }
 
-    // 2. Check Bearer token or custom auth headers
+    // 2. Check signed application bearer token. Never trust a client-supplied user ID.
     const authHeader = req.headers.authorization || (req.headers["x-auth-token"] as string);
     if (authHeader) {
       const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-      let userId: string | null = null;
-
-      if (token.startsWith("sess_")) {
-        const parts = token.split("_");
-        if (parts.length >= 2 && parts[1] && Types.ObjectId.isValid(parts[1])) {
-          userId = parts[1];
-        }
-      } else if (Types.ObjectId.isValid(token)) {
-        userId = token;
-      }
-
-      if (userId) {
-        const user = await User.findById(userId);
-        if (user && user.isActive) {
-          req.user = {
-            id: user._id.toString(),
-            name: user.name,
-            email: user.email || "",
-            phone: user.phone,
-            role: user.role,
-            designation: user.designation || undefined,
-            assignedClasses: JSON.stringify(user.assignedClasses || []),
-            emailVerified: true,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
-          } as AuthenticatedUser;
-          req.session = { token, user: req.user };
-        }
-      }
+      const bearerUser = await resolveBearerUser(token);
+      if (bearerUser) { req.user = bearerUser; req.session = { token, user: bearerUser }; }
     }
   } catch (error) {
     console.error("Auth middleware error:", error);
@@ -136,7 +123,7 @@ export const requireAuth = asyncHandler(async (
           name: dbUser.name,
           email: dbUser.email || session.user.email || "",
           phone: dbUser.phone || (session.user as any).phone,
-          role: dbUser.role || session.user.role,
+          role: dbUser.role,
           designation: dbUser.designation || undefined,
           assignedClasses: JSON.stringify(dbUser.assignedClasses || []),
           emailVerified: true,
@@ -147,46 +134,16 @@ export const requireAuth = asyncHandler(async (
         return next();
       }
 
-      req.user = session.user as unknown as AuthenticatedUser;
-      req.session = session.session;
-      return next();
+      // The Better Auth principal must also resolve to an active application user.
     }
   } catch {}
 
-  // 2. Check Bearer token or custom auth headers
+  // 2. Check signed application bearer token. Never trust a client-supplied user ID.
   const authHeader = req.headers.authorization || (req.headers["x-auth-token"] as string);
   if (authHeader) {
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    let userId: string | null = null;
-
-    if (token.startsWith("sess_")) {
-      const parts = token.split("_");
-      if (parts.length >= 2 && parts[1] && Types.ObjectId.isValid(parts[1])) {
-        userId = parts[1];
-      }
-    } else if (Types.ObjectId.isValid(token)) {
-      userId = token;
-    }
-
-    if (userId) {
-      const user = await User.findById(userId);
-      if (user && user.isActive) {
-        req.user = {
-          id: user._id.toString(),
-          name: user.name,
-          email: user.email || "",
-          phone: user.phone,
-          role: user.role,
-          designation: user.designation || undefined,
-          assignedClasses: JSON.stringify(user.assignedClasses || []),
-          emailVerified: true,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt,
-        } as AuthenticatedUser;
-        req.session = { token, user: req.user };
-        return next();
-      }
-    }
+    const bearerUser = await resolveBearerUser(token);
+    if (bearerUser) { req.user = bearerUser; req.session = { token, user: bearerUser }; return next(); }
   }
 
   return res.status(401).json({

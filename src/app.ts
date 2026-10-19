@@ -13,6 +13,7 @@ import { sadhrRoutes } from "./modules/sadhr/index.js";
 import { muallimRoutes } from "./modules/muallim/index.js";
 import { parentRoutes } from "./modules/parent/index.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
+import { sadhrAudit } from "./middlewares/sadhrAudit.js";
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // 2. Attach user session to request
 app.use(authenticate);
+app.use(sadhrAudit);
 
 import User from "./models/User.js";
 

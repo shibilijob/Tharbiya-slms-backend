@@ -26,7 +26,11 @@ export class MuallimController {
    */
   getDashboard = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const muallimId = req.user?.id || "";
-    const stats = await muallimService.getMuallimDashboardStats(muallimId);
+    const classId = typeof req.query.classId === "string" ? req.query.classId : undefined;
+    if (req.user?.role === "SADHR_MUALLIM" && !classId) {
+      return res.status(400).json({ success: false, message: "A selected class is required for Sadhr dashboard statistics" });
+    }
+    const stats = await muallimService.getMuallimDashboardStats(muallimId, classId);
 
     return res.json({
       success: true,
@@ -107,7 +111,7 @@ export class MuallimController {
         ? req.query.date
         : (new Date().toISOString().split("T")[0] as string);
 
-    const attendance = await muallimService.getClassAttendanceByDate(classId, dateStr);
+    const attendance = await muallimService.getClassAttendanceByDate(classId, dateStr, req.user?.id || "");
 
     return res.json({
       success: true,
@@ -121,6 +125,7 @@ export class MuallimController {
    */
   getStudentAttendance = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId);
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
     const startDate = req.query.startDate as string | undefined;
     const endDate = req.query.endDate as string | undefined;
 
@@ -144,6 +149,7 @@ export class MuallimController {
    */
   getStudentHifzHistory = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId || "");
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
     const limit = req.query.limit ? Number(req.query.limit) : 20;
 
     const history = await muallimService.getStudentHifzHistory(studentId, limit);
@@ -160,6 +166,7 @@ export class MuallimController {
    */
   getStudentHifzSummary = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId || "");
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
 
     const summary = await muallimService.getStudentHifzSummary(studentId);
 
@@ -202,6 +209,7 @@ export class MuallimController {
    */
   getStudentEvaluations = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId || "");
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
 
     const evaluations = await muallimService.getStudentEvaluations(studentId);
 
@@ -217,6 +225,7 @@ export class MuallimController {
    */
   getStudentPracticalReport = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const studentId = String(req.params.studentId || "");
+    await muallimService.assertStudentAssigned(req.user?.id || "", studentId);
 
     const report = await muallimService.getStudentPracticalReport(studentId);
 

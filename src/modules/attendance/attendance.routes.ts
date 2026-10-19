@@ -23,7 +23,7 @@ router.post(
 router.get("/", requireAuth, attendanceController.getAttendanceList);
 
 // Get class attendance for a specific date
-router.get("/class/:classId", requireAuth, attendanceController.getClassAttendance);
+router.get("/class/:classId", requireAuth, requireRole(["MUALLIM", "SADHR_MUALLIM"]), attendanceController.getClassAttendance);
 
 // Get student attendance history (Accessible to Parents, Muallims, and Sadhr)
 router.get("/student/:studentId", requireAuth, attendanceController.getStudentAttendance);
