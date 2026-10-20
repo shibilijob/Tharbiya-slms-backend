@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "test": "npm run build && node dist/modules/auth/sessionToken.test.js",
     "start": "node dist/server.js",
     "seed:users": "tsx src/scripts/seed-users.ts"
   },

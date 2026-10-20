@@ -5,6 +5,7 @@ import { parentService } from "../parent/parent.service.js";
 import { getFirstDayOfCurrentMonthForAttendance } from "../parent/parent.service.js";
 import { validateMarkAttendanceInput } from "./attendance.validators.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
+import { muallimService } from "../muallim/muallim.service.js";
 
 export class AttendanceController {
   /**
@@ -39,7 +40,7 @@ export class AttendanceController {
         ? req.query.date
         : (new Date().toISOString().split("T")[0] as string);
 
-    const attendance = await attendanceService.getClassAttendanceByDate(classId, dateStr);
+    const attendance = await attendanceService.getClassAttendanceByDate(classId, dateStr, req.user?.id);
     return res.json({
       success: true,
       date: dateStr,
@@ -99,6 +100,12 @@ export class AttendanceController {
         records: result.records,
         summary: result.summary,
       });
+    }
+
+    if (req.user?.role === "MUALLIM" || req.user?.role === "SADHR_MUALLIM") {
+      await muallimService.assertStudentAssigned(req.user.id, studentId);
+    } else if (req.user?.role !== "PARENT") {
+      return res.status(403).json({ success: false, message: "Forbidden: unsupported account role" });
     }
 
     const result = await attendanceService.getStudentAttendance(studentId, startDate, endDate);

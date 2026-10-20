@@ -13,12 +13,13 @@ router.post(
 );
 
 // Get student's practical history
-router.get("/student/:studentId", requireAuth, practicalController.getStudentEvaluations);
+router.get("/student/:studentId", requireAuth, requireRole(["MUALLIM", "SADHR_MUALLIM"]), practicalController.getStudentEvaluations);
 
 // Get student's overall report card
 router.get(
   "/student/:studentId/report",
   requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
   practicalController.getStudentPracticalReport
 );
 

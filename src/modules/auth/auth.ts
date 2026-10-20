@@ -27,9 +27,7 @@ export const auth = betterAuth({
     client: mongoClient,
     transaction: false,
   }),
-  secret:
-    process.env.BETTER_AUTH_SECRET ||
-    "tharbiya_madrasa_super_secure_secret_key_2026_jwt_auth_production_development",
+  secret: process.env.BETTER_AUTH_SECRET || "",
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
   trustedOrigins: [
     process.env.CLIENT_URL ||
