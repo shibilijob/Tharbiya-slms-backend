@@ -13,6 +13,8 @@ const facultyRoles = ["MUALLIM", "SADHR_MUALLIM"];
  */
 router.get("/dashboard", requireAuth, requireRole(facultyRoles), muallimController.getDashboard);
 router.get("/assessments", requireAuth, requireRole([...facultyRoles, "PARENT"]), assessmentController.list);
+router.get("/assessments/student-marks", requireAuth, requireRole(facultyRoles), assessmentController.getStudentMarks);
+router.post("/assessments/student-marks/save", requireAuth, requireRole(facultyRoles), assessmentController.saveStudentMarks);
 router.post("/assessments", requireAuth, requireRole(facultyRoles), assessmentController.save);
 router.delete("/assessments/:id", requireAuth, requireRole(facultyRoles), assessmentController.remove);
 router.get("/classes", requireAuth, requireRole(facultyRoles), muallimController.getAssignedClasses);

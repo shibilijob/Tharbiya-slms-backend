@@ -31,3 +31,31 @@ export interface StudentAttendanceSummary {
   holidayDays: number;
   percentage: number;
 }
+
+export interface SaveMonthlyBacklogDTO {
+  classId: string;
+  year: number;
+  month: number;
+  monthName?: string;
+  totalWorkingDays: number;
+  studentsData: Array<{
+    studentId: string;
+    attendedDays: number;
+  }>;
+}
+
+export interface StudentAttendanceCardStat {
+  studentId: string;
+  currentMonth: string; // e.g. "21/24"
+  prevMonths: string;   // e.g. "22/25"
+  totalAttendance: string; // e.g. "43/49"
+  currentMonthPercent: number;
+  prevMonthsPercent: number;
+  totalPercent: number;
+  currentAttended?: number;
+  currentWorking?: number;
+  prevAttended?: number;
+  prevWorking?: number;
+  totalAttended?: number;
+  totalWorking?: number;
+}

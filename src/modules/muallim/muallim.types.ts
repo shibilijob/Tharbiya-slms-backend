@@ -4,6 +4,8 @@ import type {
   MarkClassAttendanceDTO,
   AttendanceFilterQuery,
   StudentAttendanceSummary,
+  SaveMonthlyBacklogDTO,
+  StudentAttendanceCardStat,
 } from "../attendance/attendance.types.js";
 
 import type {
@@ -24,6 +26,8 @@ export type {
   MarkClassAttendanceDTO,
   AttendanceFilterQuery,
   StudentAttendanceSummary,
+  SaveMonthlyBacklogDTO,
+  StudentAttendanceCardStat,
   StudentHifzSummary,
   PracticalCategory,
   PracticalScoreItem,
