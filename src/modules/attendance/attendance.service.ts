@@ -1,5 +1,10 @@
 import { muallimService } from "../muallim/muallim.service.js";
-import type { MarkClassAttendanceDTO, StudentAttendanceSummary } from "./attendance.types.js";
+import type {
+  MarkClassAttendanceDTO,
+  StudentAttendanceSummary,
+  SaveMonthlyBacklogDTO,
+  StudentAttendanceCardStat,
+} from "./attendance.types.js";
 
 export class AttendanceService {
   /**
@@ -7,6 +12,27 @@ export class AttendanceService {
    */
   async markClassAttendance(data: MarkClassAttendanceDTO, markedById: string) {
     return muallimService.markClassAttendance(data, markedById);
+  }
+
+  /**
+   * Save or update monthly attendance backlog
+   */
+  async saveMonthlyBacklog(data: SaveMonthlyBacklogDTO, muallimId?: string) {
+    return muallimService.saveMonthlyBacklog(data, muallimId);
+  }
+
+  /**
+   * Get class monthly backlog records
+   */
+  async getClassMonthlyBacklog(classId: string, year?: number, month?: number, muallimId?: string) {
+    return muallimService.getClassMonthlyBacklog(classId, year, month, muallimId);
+  }
+
+  /**
+   * Get class combined attendance stats (Current Month, Prev Months, Total) for cards
+   */
+  async getClassAttendanceStats(classId: string, targetDateStr?: string, muallimId?: string) {
+    return muallimService.getClassAttendanceStats(classId, targetDateStr, muallimId);
   }
 
   /**
@@ -46,3 +72,4 @@ export class AttendanceService {
 }
 
 export const attendanceService = new AttendanceService();
+

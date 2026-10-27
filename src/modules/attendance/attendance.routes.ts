@@ -19,6 +19,29 @@ router.post(
   attendanceController.markAttendance
 );
 
+// Monthly Backlog Endpoints
+router.post(
+  "/backlog/save-month",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  attendanceController.saveMonthlyBacklog
+);
+
+router.get(
+  "/backlog/class/:classId",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  attendanceController.getClassMonthlyBacklog
+);
+
+// Card Badges Statistics Endpoint
+router.get(
+  "/stats/class/:classId",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  attendanceController.getClassAttendanceStats
+);
+
 // Get attendance list (filtered by query params and user role)
 router.get("/", requireAuth, attendanceController.getAttendanceList);
 

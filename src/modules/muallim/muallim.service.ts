@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Attendance from "../../models/Attendance.js";
+import MonthlyAttendanceBacklog from "../../models/MonthlyAttendanceBacklog.js";
 import HifzRecord from "../../models/HifzRecord.js";
 import HifzTarget from "../../models/HifzTarget.js";
 import PracticalEvaluation from "../practical/practical.model.js";
@@ -15,6 +16,8 @@ import type {
   AttendanceStatus,
   MarkClassAttendanceDTO,
   StudentAttendanceSummary,
+  SaveMonthlyBacklogDTO,
+  StudentAttendanceCardStat,
   StudentHifzSummary,
   RecordPracticalEvaluationDTO,
   StudentPracticalReport,
@@ -366,6 +369,205 @@ export class MuallimService {
         percentage,
       },
     };
+  }
+
+  /**
+   * Save or update monthly attendance backlog entries for a class
+   */
+  async saveMonthlyBacklog(data: SaveMonthlyBacklogDTO, muallimId?: string) {
+    const classObjectId = await this.resolveClassObjectId(data.classId);
+    if (muallimId && mongoose.Types.ObjectId.isValid(muallimId)) {
+      await this.assertClassAssigned(muallimId, classObjectId.toString());
+    }
+
+    if (!data.year || !data.month || data.totalWorkingDays === undefined || !Array.isArray(data.studentsData)) {
+      throw new AppError("Invalid monthly backlog payload", 400);
+    }
+
+    const yearNum = Number(data.year);
+    const monthNum = Number(data.month);
+    const totalWorking = Number(data.totalWorkingDays) || 0;
+
+    const operations = data.studentsData.map((item) => {
+      const studentObjectId = new mongoose.Types.ObjectId(item.studentId);
+      const attended = Number(item.attendedDays) || 0;
+      return {
+        updateOne: {
+          filter: {
+            studentId: studentObjectId,
+            year: yearNum,
+            month: monthNum,
+          },
+          update: {
+            $set: {
+              classId: classObjectId,
+              year: yearNum,
+              month: monthNum,
+              monthName: data.monthName || "",
+              totalWorkingDays: totalWorking,
+              attendedDays: attended,
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    const result = operations.length > 0 ? await MonthlyAttendanceBacklog.bulkWrite(operations) : null;
+
+    const records = await MonthlyAttendanceBacklog.find({
+      classId: classObjectId,
+      year: yearNum,
+      month: monthNum,
+    }).populate("studentId", "name admissionNumber gender");
+
+    return {
+      success: true,
+      matchedCount: result?.matchedCount || 0,
+      modifiedCount: result?.modifiedCount || 0,
+      upsertedCount: result?.upsertedCount || 0,
+      records,
+    };
+  }
+
+  /**
+   * Fetch existing monthly attendance backlog entries for a class
+   */
+  async getClassMonthlyBacklog(classId: string, year?: number, month?: number, muallimId?: string) {
+    const classObjectId = await this.resolveClassObjectId(classId);
+    if (muallimId && mongoose.Types.ObjectId.isValid(muallimId)) {
+      await this.assertClassAssigned(muallimId, classObjectId.toString());
+    }
+
+    const query: any = { classId: classObjectId };
+    if (year) query.year = Number(year);
+    if (month) query.month = Number(month);
+
+    const records = await MonthlyAttendanceBacklog.find(query)
+      .populate("studentId", "name admissionNumber gender")
+      .sort({ year: -1, month: -1 });
+
+    return records;
+  }
+
+  /**
+   * Calculate combined attendance statistics (Current Month, Prev Months, Total) for student cards
+   */
+  async getClassAttendanceStats(
+    classId: string,
+    targetDateStr?: string,
+    muallimId?: string
+  ): Promise<{ stats: Record<string, StudentAttendanceCardStat>; list: StudentAttendanceCardStat[] }> {
+    const classObjectId = await this.resolveClassObjectId(classId);
+    if (muallimId && mongoose.Types.ObjectId.isValid(muallimId)) {
+      await this.assertClassAssigned(muallimId, classObjectId.toString());
+    }
+
+    let targetYear: number;
+    let targetMonth: number; // 1-12 (e.g. October = 10)
+
+    if (targetDateStr) {
+      const clean = targetDateStr.split("T")[0];
+      const parts = clean.split("-").map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        targetYear = parts[0];
+        targetMonth = parts[1];
+      } else {
+        const d = new Date(targetDateStr);
+        targetYear = d.getFullYear();
+        targetMonth = d.getMonth() + 1;
+      }
+    } else {
+      const now = new Date();
+      targetYear = now.getFullYear();
+      targetMonth = now.getMonth() + 1;
+    }
+
+    const startOfMonth = new Date(Date.UTC(targetYear, targetMonth - 1, 1, 0, 0, 0, 0));
+    const endOfMonth = new Date(Date.UTC(targetYear, targetMonth, 0, 23, 59, 59, 999));
+
+    // 1. Fetch active students in class
+    const students = await Student.find({
+      classId: classObjectId,
+      isActive: true,
+    }).select("_id name admissionNumber");
+
+    const studentIds = students.map((s) => s._id);
+    const studentObjectIds = studentIds.map((id) => new mongoose.Types.ObjectId(id));
+    const studentStringIds = studentIds.map((id) => id.toString());
+    const allStudentIds = [...studentObjectIds, ...studentStringIds];
+
+    // 2. Fetch daily attendance records for this month
+    const currentMonthRecords = await Attendance.find({
+      studentId: { $in: allStudentIds },
+      date: { $gte: startOfMonth, $lte: endOfMonth },
+    });
+
+    // 3. Fetch prior months backlog records (months before targetYear-targetMonth)
+    const priorBacklogs = await MonthlyAttendanceBacklog.find({
+      studentId: { $in: allStudentIds },
+      $or: [
+        { year: { $lt: targetYear } },
+        { year: targetYear, month: { $lt: targetMonth } },
+      ],
+    });
+
+    console.log(`[getClassAttendanceStats] Class: ${classId} (${classObjectId}), Year: ${targetYear}, Month: ${targetMonth}, Students: ${students.length}`);
+    console.log(`[getClassAttendanceStats] priorBacklogs.length: ${priorBacklogs.length}`);
+
+    // 4. Calculate total unique marked school days for this class in current month (excluding class holidays)
+    const classSchoolDates = new Set<string>();
+    for (const r of currentMonthRecords) {
+      if (r.status && r.status !== "HOLIDAY") {
+        const dStr = r.date instanceof Date ? r.date.toISOString().split("T")[0] : String(r.date).split("T")[0];
+        classSchoolDates.add(dStr);
+      }
+    }
+    const classSchoolDays = classSchoolDates.size;
+
+    const stats: Record<string, StudentAttendanceCardStat> = {};
+    const list: StudentAttendanceCardStat[] = [];
+
+    for (const student of students) {
+      const sId = student._id.toString();
+
+      // Current Month: PRESENT count vs marked class school days
+      const sCurrentRecs = currentMonthRecords.filter((r) => String(r.studentId) === sId);
+      const attendedCur = sCurrentRecs.filter((r) => r.status === "PRESENT").length;
+      const studentNonHolidayRecs = sCurrentRecs.filter((r) => r.status !== "HOLIDAY").length;
+      const workingCur = Math.max(classSchoolDays, studentNonHolidayRecs);
+
+      // Previous Months: Sum of attendedDays / totalWorkingDays from backlog
+      const sBacklogs = priorBacklogs.filter((b) => String(b.studentId) === sId);
+      const attendedPrev = sBacklogs.reduce((sum, b) => sum + (Number(b.attendedDays) || 0), 0);
+      const workingPrev = sBacklogs.reduce((sum, b) => sum + (Number(b.totalWorkingDays) || 0), 0);
+
+      // Total: (PREV attendedDays + CURRENT PRESENT) / (PREV workingDays + CURRENT marked days)
+      const attendedTot = attendedPrev + attendedCur;
+      const workingTot = workingPrev + workingCur;
+
+      const item: StudentAttendanceCardStat = {
+        studentId: sId,
+        currentMonth: `${attendedCur}/${workingCur}`,
+        prevMonths: `${attendedPrev}/${workingPrev}`,
+        totalAttendance: `${attendedTot}/${workingTot}`,
+        currentMonthPercent: workingCur > 0 ? Math.round((attendedCur / workingCur) * 100) : 0,
+        prevMonthsPercent: workingPrev > 0 ? Math.round((attendedPrev / workingPrev) * 100) : 0,
+        totalPercent: workingTot > 0 ? Math.round((attendedTot / workingTot) * 100) : 0,
+        currentAttended: attendedCur,
+        currentWorking: workingCur,
+        prevAttended: attendedPrev,
+        prevWorking: workingPrev,
+        totalAttended: attendedTot,
+        totalWorking: workingTot,
+      };
+
+      stats[sId] = item;
+      list.push(item);
+    }
+
+    console.log(`[getClassAttendanceStats] Final computed stats:`, stats);
+    return { stats, list };
   }
 
   /**
