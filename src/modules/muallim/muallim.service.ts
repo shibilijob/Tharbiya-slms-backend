@@ -388,32 +388,33 @@ export class MuallimService {
     const monthNum = Number(data.month);
     const totalWorking = Number(data.totalWorkingDays) || 0;
 
-    const operations = data.studentsData.map((item) => {
-      const studentObjectId = new mongoose.Types.ObjectId(item.studentId);
-      const attended = Number(item.attendedDays) || 0;
-      return {
-        updateOne: {
-          filter: {
-            studentId: studentObjectId,
-            year: yearNum,
-            month: monthNum,
-          },
-          update: {
-            $set: {
-              classId: classObjectId,
-              year: yearNum,
-              month: monthNum,
-              monthName: data.monthName || "",
-              totalWorkingDays: totalWorking,
-              attendedDays: attended,
-            },
-          },
-          upsert: true,
-        },
-      };
+    const studentIds = data.studentsData.map((item) => item.studentId);
+    const studentObjectIds = studentIds
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    // Delete existing records for the given classId, year, month, and studentIds
+    await MonthlyAttendanceBacklog.deleteMany({
+      classId: classObjectId,
+      year: yearNum,
+      month: monthNum,
+      studentId: { $in: [...studentObjectIds, ...studentIds] },
     });
 
-    const result = operations.length > 0 ? await MonthlyAttendanceBacklog.bulkWrite(operations) : null;
+    // Insert the new updated records
+    const documentsToInsert = data.studentsData.map((item) => ({
+      studentId: new mongoose.Types.ObjectId(item.studentId),
+      classId: classObjectId,
+      year: yearNum,
+      month: monthNum,
+      monthName: data.monthName || "",
+      totalWorkingDays: totalWorking,
+      attendedDays: Number(item.attendedDays) || 0,
+    }));
+
+    if (documentsToInsert.length > 0) {
+      await MonthlyAttendanceBacklog.insertMany(documentsToInsert);
+    }
 
     const records = await MonthlyAttendanceBacklog.find({
       classId: classObjectId,
@@ -423,9 +424,6 @@ export class MuallimService {
 
     return {
       success: true,
-      matchedCount: result?.matchedCount || 0,
-      modifiedCount: result?.modifiedCount || 0,
-      upsertedCount: result?.upsertedCount || 0,
       records,
     };
   }
