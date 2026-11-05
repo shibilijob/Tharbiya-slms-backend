@@ -6,7 +6,7 @@ import { assessmentController } from "./assessment.controller.js";
 
 const router = Router();
 
-const facultyRoles = ["MUALLIM", "SADHR_MUALLIM"];
+const facultyRoles = ["MUALLIM", "SADHR_MUALLIM", "ADMIN", "SUPER_ADMIN"];
 
 /**
  * Muallim Dashboard & Classroom

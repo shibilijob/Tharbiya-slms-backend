@@ -50,12 +50,20 @@ export interface BulkStudentScoreItem {
   remarks?: string;
 }
 
+export interface BulkPracticalScoreItem {
+  studentId: string;
+  practicalSubjectId: string;
+  score: number;
+  remarks?: string;
+}
+
 export interface BulkRecordMonthlyScoreDTO {
   classId: string;
-  practicalSubjectId: string;
   month: number;
   year: number;
-  scores: BulkStudentScoreItem[];
+  entries?: BulkPracticalScoreItem[];
+  practicalSubjectId?: string;
+  scores?: BulkStudentScoreItem[];
   date?: string | Date;
 }
 

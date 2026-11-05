@@ -78,13 +78,19 @@ export class PracticalScoreService {
     // 1. Verify teacher assignment authorization
     if (teacherId) {
       const context = await muallimService.getTeacherContext(teacherId);
-      const isAllowed = muallimService.isClassAssignedToTeacher(
-        classObjectId,
-        context.assignedClassIds,
-        context.assignedClassNames
-      );
-      if (!isAllowed) {
-        throw new Error("Access denied: You are not assigned to record practical scores for this class");
+      const isSuperUser =
+        (context.user?.role as string) === "SADHR_MUALLIM" ||
+        (context.user?.role as string) === "ADMIN" ||
+        (context.user?.role as string) === "SUPER_ADMIN";
+      if (!isSuperUser) {
+        const isAllowed = muallimService.isClassAssignedToTeacher(
+          classObjectId,
+          context.assignedClassIds,
+          context.assignedClassNames
+        );
+        if (!isAllowed) {
+          throw new Error("Access denied: You are not assigned to record practical scores for this class");
+        }
       }
     }
 
@@ -165,32 +171,178 @@ export class PracticalScoreService {
   }
 
   /**
-   * Bulk record scores for multiple students in a class for a practical subject & month
+   * Bulk record scores for multiple students & practical subjects in a class for a month
    */
   async recordBulkMonthlyScores(
     data: BulkRecordMonthlyScoreDTO,
     teacherId: string
   ): Promise<PracticalScoreResponseDTO[]> {
-    const results: PracticalScoreResponseDTO[] = [];
+    const classObjectId = await this.resolveClassObjectId(data.classId);
 
-    for (const item of data.scores) {
-      const res = await this.recordMonthlyScore(
-        {
-          studentId: item.studentId,
-          classId: data.classId,
-          practicalSubjectId: data.practicalSubjectId,
-          month: data.month,
-          year: data.year,
-          score: item.score,
-          remarks: item.remarks,
-          date: data.date,
-        },
-        teacherId
-      );
-      results.push(res);
+    // 1. Verify teacher assignment authorization
+    if (teacherId) {
+      const context = await muallimService.getTeacherContext(teacherId);
+      const isSuperUser =
+        (context.user?.role as string) === "SADHR_MUALLIM" ||
+        (context.user?.role as string) === "ADMIN" ||
+        (context.user?.role as string) === "SUPER_ADMIN";
+      if (!isSuperUser) {
+        const isAllowed = muallimService.isClassAssignedToTeacher(
+          classObjectId,
+          context.assignedClassIds,
+          context.assignedClassNames
+        );
+        if (!isAllowed) {
+          throw new Error("Access denied: You are not assigned to record practical scores for this class");
+        }
+      }
     }
 
-    return results;
+    // 2. Validate Month & Year
+    const month = Number(data.month);
+    const year = Number(data.year);
+    if (!month || isNaN(month) || month < 1 || month > 12) {
+      throw new Error("Invalid month: Month must be an integer between 1 and 12");
+    }
+    if (!year || isNaN(year) || year < 2000 || year > 2100) {
+      throw new Error("Invalid year: Year must be a valid 4-digit number (e.g. 2026)");
+    }
+
+    // 3. Normalize entries (supports both multi-subject entries array and single-subject scores array)
+    let rawEntries: Array<{ studentId: string; practicalSubjectId: string; score: number; remarks?: string }> = [];
+    if (Array.isArray(data.entries)) {
+      rawEntries = data.entries;
+    } else if (data.practicalSubjectId && Array.isArray(data.scores)) {
+      rawEntries = data.scores.map((s) => ({
+        studentId: s.studentId,
+        practicalSubjectId: data.practicalSubjectId!,
+        score: s.score,
+        remarks: s.remarks,
+      }));
+    }
+
+    // Filter out entries with no mark provided (null, undefined, NaN, empty string)
+    // Ensures empty marks are not accidentally saved as zero
+    const validEntries = rawEntries.filter(
+      (e) =>
+        e &&
+        e.studentId &&
+        e.practicalSubjectId &&
+        e.score !== undefined &&
+        e.score !== null &&
+        e.score !== ("" as any) &&
+        !isNaN(Number(e.score))
+    );
+
+    if (validEntries.length === 0) {
+      return [];
+    }
+
+    // Deduplicate entries by studentId + practicalSubjectId to prevent batch collisions
+    const dedupedEntriesMap = new Map<string, typeof validEntries[0]>();
+    for (const e of validEntries) {
+      dedupedEntriesMap.set(`${e.studentId}_${e.practicalSubjectId}`, e);
+    }
+    const dedupedEntries = Array.from(dedupedEntriesMap.values());
+
+    // 4. Fetch all active practical subjects for this class to validate assignment and max marks
+    const classSubjects = await PracticalSubject.find({
+      classId: classObjectId,
+      isActive: true,
+    });
+    const subjectMap = new Map<string, any>(
+      classSubjects.map((s) => [s._id.toString(), s])
+    );
+
+    // 5. Fetch all active students for this class to validate enrollment
+    const classStudents = await Student.find({
+      classId: classObjectId,
+      isActive: true,
+    });
+    const studentMap = new Map<string, any>(
+      classStudents.map((s) => [s._id.toString(), s])
+    );
+
+    // 6. Validate every entry before writing (Atomic safety: fail fast if any entry is invalid)
+    for (const item of dedupedEntries) {
+      const student = studentMap.get(item.studentId.toString());
+      if (!student) {
+        throw new Error(`Student ${item.studentId} does not belong to the selected class or is inactive`);
+      }
+
+      const subject = subjectMap.get(item.practicalSubjectId.toString());
+      if (!subject) {
+        throw new Error(`Practical subject ${item.practicalSubjectId} does not belong to the selected class or is inactive`);
+      }
+
+      const scoreVal = Number(item.score);
+      if (isNaN(scoreVal) || scoreVal < 0) {
+        throw new Error(`Invalid mark for student ${student.name} in ${subject.name}: Mark cannot be negative`);
+      }
+
+      const maxScore = subject.maxScore || 5;
+      if (scoreVal > maxScore) {
+        throw new Error(`Mark (${scoreVal}) for student ${student.name} exceeds maximum mark of ${maxScore} for ${subject.name}`);
+      }
+    }
+
+    // 7. Atomic bulk upsert
+    const evaluationDate = data.date ? new Date(data.date) : new Date(year, month - 1, 1);
+    const evaluatorObjectId = (teacherId && mongoose.Types.ObjectId.isValid(teacherId))
+      ? new mongoose.Types.ObjectId(teacherId)
+      : undefined;
+
+    const operations = dedupedEntries.map((item) => {
+      const subject = subjectMap.get(item.practicalSubjectId.toString())!;
+      const student = studentMap.get(item.studentId.toString())!;
+      const scoreVal = Number(item.score);
+      const maxScore = subject.maxScore || 5;
+
+      return {
+        updateOne: {
+          filter: {
+            studentId: student._id,
+            practicalSubjectId: subject._id,
+            month,
+            year,
+          },
+          update: {
+            $set: {
+              classId: classObjectId,
+              score: scoreVal,
+              maxScore,
+              remarks: item.remarks?.trim() || "",
+              ...(evaluatorObjectId ? { evaluatedById: evaluatorObjectId } : {}),
+              date: evaluationDate,
+            },
+            $setOnInsert: {
+              createdAt: new Date(),
+              ...(!evaluatorObjectId ? { evaluatedById: student.classId?.classTeacherId || classObjectId } : {}),
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    if (operations.length > 0) {
+      await PracticalScore.bulkWrite(operations);
+    }
+
+    // 8. Return all saved docs populated
+    const savedDocs = await PracticalScore.find({
+      classId: classObjectId,
+      month,
+      year,
+      practicalSubjectId: { $in: Array.from(subjectMap.keys()).map((id) => new mongoose.Types.ObjectId(id)) },
+    })
+      .populate("studentId", "name admissionNumber gender classId")
+      .populate("classId", "name")
+      .populate("practicalSubjectId", "name maxScore")
+      .populate("evaluatedById", "name")
+      .sort({ "studentId.name": 1 });
+
+    return savedDocs.map(formatScoreResponse);
   }
 
   /**
@@ -201,18 +353,25 @@ export class PracticalScoreService {
     teacherId: string
   ): Promise<PracticalScoreResponseDTO[]> {
     const filter: any = {};
+    let isSuperUser = false;
 
     if (teacherId) {
       const context = await muallimService.getTeacherContext(teacherId);
-      if (context.assignedClassIds.length === 0) return [];
-      filter.classId = { $in: context.assignedClassIds };
+      isSuperUser =
+        (context.user?.role as string) === "SADHR_MUALLIM" ||
+        (context.user?.role as string) === "ADMIN" ||
+        (context.user?.role as string) === "SUPER_ADMIN";
+      if (!isSuperUser) {
+        if (context.assignedClassIds.length === 0) return [];
+        filter.classId = { $in: context.assignedClassIds };
+      }
     }
 
     if (query.classId) {
       const classObjectId = await this.resolveClassObjectId(query.classId);
 
       // Verify teacher authorization
-      if (teacherId) {
+      if (teacherId && !isSuperUser) {
         const context = await muallimService.getTeacherContext(teacherId);
         const isAllowed = muallimService.isClassAssignedToTeacher(
           classObjectId,

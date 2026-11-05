@@ -4,22 +4,24 @@ import { requireAuth, requireRole } from "../auth/auth.middleware.js";
 
 const router = Router();
 
-// Record practical and adab score (Muallim / Sadhr Muallim)
+const allowedRoles = ["MUALLIM", "SADHR_MUALLIM", "ADMIN", "SUPER_ADMIN"];
+
+// Record practical and adab score (Muallim / Sadhr Muallim / Admin)
 router.post(
   "/evaluate",
   requireAuth,
-  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  requireRole(allowedRoles),
   practicalController.recordEvaluation
 );
 
 // Get student's practical history
-router.get("/student/:studentId", requireAuth, requireRole(["MUALLIM", "SADHR_MUALLIM"]), practicalController.getStudentEvaluations);
+router.get("/student/:studentId", requireAuth, requireRole(allowedRoles), practicalController.getStudentEvaluations);
 
 // Get student's overall report card
 router.get(
   "/student/:studentId/report",
   requireAuth,
-  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  requireRole(allowedRoles),
   practicalController.getStudentPracticalReport
 );
 
@@ -30,7 +32,7 @@ router.get(
 router.post(
   "/scores",
   requireAuth,
-  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  requireRole(allowedRoles),
   practicalController.recordMonthlyScore
 );
 
@@ -38,7 +40,7 @@ router.post(
 router.post(
   "/scores/bulk",
   requireAuth,
-  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  requireRole(allowedRoles),
   practicalController.recordBulkMonthlyScores
 );
 
@@ -46,7 +48,7 @@ router.post(
 router.get(
   "/scores",
   requireAuth,
-  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  requireRole(allowedRoles),
   practicalController.getMonthlyScores
 );
 
