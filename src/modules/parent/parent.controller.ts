@@ -92,6 +92,28 @@ export class ParentController {
   });
 
   /**
+   * Get Child Monthly Attendance Backlog (Past Months Record)
+   */
+  getChildAttendanceBacklog = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const parentId = req.user?.role === "PARENT" ? req.user?.id || "" : "";
+    const studentId = String(req.params.studentId || "");
+
+    if (!studentId) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID is required",
+      });
+    }
+
+    const backlogs = await parentService.getChildAttendanceBacklog(parentId, studentId);
+
+    return res.json({
+      success: true,
+      data: backlogs,
+    });
+  });
+
+  /**
    * Get Child Quran Recitation and Hifz Progress History & Summary
    */
   getChildHifz = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

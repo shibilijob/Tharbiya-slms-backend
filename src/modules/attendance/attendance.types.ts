@@ -30,6 +30,11 @@ export interface StudentAttendanceSummary {
   leaveDays: number;
   holidayDays: number;
   percentage: number;
+  totalWorkingDays?: number;
+  dailyPresentDays?: number;
+  dailyWorkingDays?: number;
+  backlogAttendedDays?: number;
+  backlogTotalWorkingDays?: number;
 }
 
 export interface SaveMonthlyBacklogDTO {

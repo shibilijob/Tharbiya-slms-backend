@@ -367,7 +367,7 @@ export class PracticalScoreService {
       }
     }
 
-    if (query.classId) {
+    if (query.classId && query.classId !== "ALL") {
       const classObjectId = await this.resolveClassObjectId(query.classId);
 
       // Verify teacher authorization

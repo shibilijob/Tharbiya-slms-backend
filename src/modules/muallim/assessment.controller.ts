@@ -4,6 +4,8 @@ import type { AuthenticatedRequest } from "../auth/auth.middleware.js";
 import Assessment from "../../models/AcademicAssessment.js";
 import Student from "../../models/Student.js";
 import Class from "../../models/Class.js";
+import Subject from "../../models/Subject.js";
+import User from "../../models/User.js";
 import { muallimService } from "./muallim.service.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { calculateGradeFromMarks } from "../../utils/gradeCalculator.js";
@@ -37,18 +39,71 @@ export class AssessmentController {
     if (req.user?.role === "SADHR_MUALLIM" && !classId) return res.status(400).json({ success: false, message: "classId is required" });
     const filter: Record<string, any> = {};
     if (req.user?.role === "PARENT") {
-      const children = await Student.find({ parentId: actorId, isActive: true }).select("_id").lean();
+      const orConditions: any[] = [];
+      if (mongoose.Types.ObjectId.isValid(actorId)) {
+        orConditions.push({ parentId: new mongoose.Types.ObjectId(actorId) });
+      }
+      orConditions.push({ parentId: actorId });
+
+      const parentUser = await User.findById(actorId).lean();
+      if (parentUser?.phone) {
+        orConditions.push({ parentPhone: parentUser.phone });
+        orConditions.push({ phone: parentUser.phone });
+      }
+
+      const children = await Student.find({ $or: orConditions, isActive: true }).select("_id").lean();
       filter.studentId = { $in: children.map((child) => child._id) };
-    } else if (classId) {
+    } else if (classId && classId !== "ALL") {
       const cls = await resolveClass(classId);
       await muallimService.assertClassAssigned(actorId, cls.id);
       filter.classId = cls._id;
     } else {
       const context = await muallimService.getTeacherContext(actorId);
-      filter.classId = { $in: context.assignedClassIds };
+      if (context.assignedClassIds && context.assignedClassIds.length > 0) {
+        filter.classId = { $in: context.assignedClassIds };
+      }
     }
+
+    if (req.query.studentId && mongoose.Types.ObjectId.isValid(String(req.query.studentId))) {
+      filter.studentId = new mongoose.Types.ObjectId(String(req.query.studentId));
+    }
+
     const rows = await AssessmentModel.find(filter).sort({ date: -1 }).lean();
-    return res.json({ success: true, data: rows.map((r: any) => ({ ...r, id: String(r._id), studentId: String(r.studentId), teacherId: String(r.teacherId), classId: String(r.classId), date: new Date(r.date).toISOString().slice(0, 10) })) });
+
+    // Fetch subjects from DB to resolve human-readable subject names and titles
+    const dbSubjects = await Subject.find().lean();
+    const subjectMap: Record<string, any> = {};
+    (dbSubjects || []).forEach((s: any) => {
+      subjectMap[String(s._id)] = s;
+      subjectMap[s.name.toLowerCase()] = s;
+    });
+    FALLBACK_SUBJECTS.forEach((s) => {
+      if (!subjectMap[s.id]) subjectMap[s.id] = s;
+      if (!subjectMap[s.name.toLowerCase()]) subjectMap[s.name.toLowerCase()] = s;
+    });
+
+    const mappedRows = rows.map((r: any) => {
+      const sKey = String(r.subject || r.subjectId || "").trim();
+      const resolved = subjectMap[sKey] || subjectMap[sKey.toLowerCase()] || subjectMap[String(r.subjectId || "")];
+      const subjectName = resolved ? resolved.name : (r.subject || sKey);
+      const subjectMalayalam = resolved ? (resolved.malayalamTitle || "") : "";
+      const subjectArabic = resolved ? (resolved.arabicTitle || "") : "";
+
+      return {
+        ...r,
+        id: String(r._id),
+        studentId: String(r.studentId),
+        teacherId: String(r.teacherId),
+        classId: String(r.classId),
+        subject: subjectName,
+        subjectName,
+        subjectMalayalam,
+        subjectArabic,
+        date: r.date ? new Date(r.date).toISOString().slice(0, 10) : "",
+      };
+    });
+
+    return res.json({ success: true, data: mappedRows });
   });
 
   /**

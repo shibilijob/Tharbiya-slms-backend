@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import User from "../../models/User.js";
 import Student from "../../models/Student.js";
 import HifzTarget from "../../models/HifzTarget.js";
+import MonthlyAttendanceBacklog from "../../models/MonthlyAttendanceBacklog.js";
 import { AppError } from "../../utils/AppError.js";
 import { muallimService } from "../muallim/muallim.service.js";
 import { expandRangesToAyahs, parseAyahRangesFromProgress } from "../hifz/hifz.service.js";
@@ -282,7 +283,7 @@ export class ParentService {
   }
 
   /**
-   * Get Child Daily Attendance Calendar & History
+   * Get Child Daily Attendance Calendar & History + Monthly Backlogs
    */
   async getChildAttendance(
     parentId: string,
@@ -292,12 +293,34 @@ export class ParentService {
   ): Promise<ChildAttendanceDTO> {
     const student: any = await this.verifyStudentAccess(parentId, studentId);
 
-    const attendanceData = await muallimService.getStudentAttendance(
-      student._id.toString(),
-      startDate,
-      endDate,
-      getFirstDayOfCurrentMonthForAttendance()
-    );
+    const [attendanceData, backlogDocs] = await Promise.all([
+      muallimService.getStudentAttendance(
+        student._id.toString(),
+        startDate,
+        endDate,
+        getFirstDayOfCurrentMonthForAttendance()
+      ),
+      MonthlyAttendanceBacklog.find({
+        studentId: new mongoose.Types.ObjectId(studentId),
+      }).sort({ year: -1, month: -1 }).lean(),
+    ]);
+
+    const MONTH_NAMES = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+
+    const backlogs = backlogDocs.map((b) => ({
+      id: b._id.toString(),
+      studentId: b.studentId.toString(),
+      classId: b.classId ? b.classId.toString() : "",
+      year: b.year,
+      month: b.month,
+      monthName: b.monthName || MONTH_NAMES[b.month - 1] || `Month ${b.month}`,
+      totalWorkingDays: b.totalWorkingDays,
+      attendedDays: b.attendedDays,
+      percentage: b.totalWorkingDays > 0 ? Math.round((b.attendedDays / b.totalWorkingDays) * 100) : 0,
+    }));
 
     return {
       studentId: student._id.toString(),
@@ -305,7 +328,36 @@ export class ParentService {
       className: student.classId?.name || "",
       summary: attendanceData.summary,
       records: attendanceData.records,
+      backlogs,
     };
+  }
+
+  /**
+   * Get Child Monthly Attendance Backlog Records (for Previous Months)
+   */
+  async getChildAttendanceBacklog(parentId: string, studentId: string) {
+    const student: any = await this.verifyStudentAccess(parentId, studentId);
+
+    const backlogDocs = await MonthlyAttendanceBacklog.find({
+      studentId: new mongoose.Types.ObjectId(studentId),
+    }).sort({ year: -1, month: -1 }).lean();
+
+    const MONTH_NAMES = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+
+    return backlogDocs.map((b) => ({
+      id: b._id.toString(),
+      studentId: b.studentId.toString(),
+      classId: b.classId ? b.classId.toString() : "",
+      year: b.year,
+      month: b.month,
+      monthName: b.monthName || MONTH_NAMES[b.month - 1] || `Month ${b.month}`,
+      totalWorkingDays: b.totalWorkingDays,
+      attendedDays: b.attendedDays,
+      percentage: b.totalWorkingDays > 0 ? Math.round((b.attendedDays / b.totalWorkingDays) * 100) : 0,
+    }));
   }
 
   /**

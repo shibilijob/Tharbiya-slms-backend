@@ -4,6 +4,7 @@ import MonthlyAttendanceBacklog from "../../models/MonthlyAttendanceBacklog.js";
 import HifzRecord from "../../models/HifzRecord.js";
 import HifzTarget from "../../models/HifzTarget.js";
 import PracticalEvaluation from "../practical/practical.model.js";
+import PracticalScore from "../../models/PracticalScore.js";
 import PracticalSubject from "../../models/PracticalSubject.js";
 import Subject from "../../models/Subject.js";
 import Achievement from "../../models/Achievement.js";
@@ -334,7 +335,8 @@ export class MuallimService {
     endDate?: string,
     beforeDate?: Date
   ): Promise<{ records: any[]; summary: StudentAttendanceSummary }> {
-    const query: any = { studentId: new mongoose.Types.ObjectId(studentId) };
+    const studentObjectId = new mongoose.Types.ObjectId(studentId);
+    const query: any = { studentId: studentObjectId };
 
     if (startDate || endDate) {
       query.date = {};
@@ -349,24 +351,57 @@ export class MuallimService {
 
     const records = normalizeAttendanceRecords(await Attendance.find(query).sort({ date: -1 }));
 
-    const totalDays = records.length;
-    const presentDays = records.filter((r) => r.status === "PRESENT").length;
-    const absentDays = records.filter((r) => r.status === "ABSENT").length;
-    const leaveDays = records.filter((r) => r.status === "LEAVE").length;
-    const holidayDays = records.filter((r) => r.status === "HOLIDAY").length;
-    const countedDays = presentDays + absentDays + leaveDays;
-    const percentage = countedDays > 0 ? Math.round((presentDays / countedDays) * 100) : 100;
+    const dailyPresent = records.filter((r) => r.status === "PRESENT").length;
+    const dailyAbsent = records.filter((r) => r.status === "ABSENT").length;
+    const dailyLeave = records.filter((r) => r.status === "LEAVE").length;
+    const dailyHoliday = records.filter((r) => r.status === "HOLIDAY").length;
+    const dailyWorkingDays = dailyPresent + dailyAbsent + dailyLeave;
+
+    // Fetch backlog records for this student
+    const allBacklogs = await MonthlyAttendanceBacklog.find({ studentId: studentObjectId }).lean();
+
+    // Filter backlogs according to date bounds if specified
+    const filteredBacklogs = allBacklogs.filter((b) => {
+      const year = Number(b.year);
+      const month = Number(b.month); // 1-12
+      if (!year || !month) return false;
+      const monthStart = new Date(year, month - 1, 1);
+      const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+
+      if (startDate && monthEnd < new Date(startDate)) return false;
+      if (endDate && monthStart > new Date(endDate)) return false;
+      if (beforeDate && monthStart >= beforeDate) return false;
+      return true;
+    });
+
+    const backlogAttended = filteredBacklogs.reduce((sum, b) => sum + (Number(b.attendedDays) || 0), 0);
+    const backlogTotalWorking = filteredBacklogs.reduce((sum, b) => sum + (Number(b.totalWorkingDays) || 0), 0);
+    const backlogAbsent = Math.max(0, backlogTotalWorking - backlogAttended);
+
+    // Combine statistics:
+    // Total Attended = Daily Present + Backlog Attended
+    // Total Working = Daily Working + Backlog Total Working Days
+    const totalAttended = dailyPresent + backlogAttended;
+    const totalWorking = dailyWorkingDays + backlogTotalWorking;
+    const totalAbsent = dailyAbsent + backlogAbsent;
+    const totalDays = totalWorking + dailyHoliday;
+    const percentage = totalWorking > 0 ? Math.round((totalAttended / totalWorking) * 100) : 100;
 
     return {
       records,
       summary: {
         studentId,
         totalDays,
-        presentDays,
-        absentDays,
-        leaveDays,
-        holidayDays,
+        presentDays: totalAttended,
+        absentDays: totalAbsent,
+        leaveDays: dailyLeave,
+        holidayDays: dailyHoliday,
         percentage,
+        totalWorkingDays: totalWorking,
+        dailyPresentDays: dailyPresent,
+        dailyWorkingDays: dailyWorkingDays,
+        backlogAttendedDays: backlogAttended,
+        backlogTotalWorkingDays: backlogTotalWorking,
       },
     };
   }
@@ -832,35 +867,123 @@ export class MuallimService {
   }
 
   /**
-   * Get practical evaluation history for a student
+   * Get practical evaluation history for a student (supporting modern PracticalScore & legacy PracticalEvaluation)
    */
   async getStudentEvaluations(studentId: string) {
-    return PracticalEvaluation.find({
-      studentId: new mongoose.Types.ObjectId(studentId),
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return [];
+    }
+
+    const studentObjectId = new mongoose.Types.ObjectId(studentId);
+
+    // 1. Fetch modern PracticalScore records
+    const practicalScores = await PracticalScore.find({
+      studentId: studentObjectId,
+    })
+      .populate("practicalSubjectId", "name nameMalayalam maxScore description")
+      .populate("evaluatedById", "name")
+      .sort({ year: -1, month: -1, date: -1, createdAt: -1 });
+
+    const MONTH_NAMES = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+
+    // Group modern scores by year and month
+    const groupedScores = new Map<string, typeof practicalScores>();
+    for (const score of practicalScores) {
+      const key = `${score.year}-${String(score.month).padStart(2, "0")}`;
+      if (!groupedScores.has(key)) {
+        groupedScores.set(key, []);
+      }
+      groupedScores.get(key)!.push(score);
+    }
+
+    const modernEvaluations = Array.from(groupedScores.entries()).map(([monthKey, items]) => {
+      const first = items[0];
+      const monthNum = first.month;
+      const yearNum = first.year;
+      const monthName = MONTH_NAMES[monthNum - 1] || `Month ${monthNum}`;
+
+      let earnedSum = 0;
+      let maxSum = 0;
+      const scoreItems = items.map((it: any) => {
+        const subj = it.practicalSubjectId;
+        const subjName = subj?.name || "Practical Subject";
+        const maxScore = it.maxScore || subj?.maxScore || 5;
+        earnedSum += it.score;
+        maxSum += maxScore;
+
+        return {
+          practicalSubjectId: subj?._id ? subj._id.toString() : it.practicalSubjectId?.toString() || "",
+          category: subjName,
+          subjectName: subjName,
+          subjectNameMalayalam: subj?.nameMalayalam || undefined,
+          score: it.score,
+          maxScore,
+          remarks: it.remarks || "",
+        };
+      });
+
+      const overallPercentage = maxSum > 0 ? Math.round((earnedSum / maxSum) * 100) : 0;
+      const remarksList = items.map((it) => it.remarks).filter(Boolean);
+
+      return {
+        _id: `score-${first.studentId}-${yearNum}-${monthNum}`,
+        id: `score-${first.studentId}-${yearNum}-${monthNum}`,
+        studentId: first.studentId.toString(),
+        classId: first.classId ? first.classId.toString() : "",
+        term: `${monthName} ${yearNum}`,
+        month: monthKey,
+        scores: scoreItems,
+        overallScore: overallPercentage,
+        overallRemarks: remarksList.length > 0 ? remarksList.join(" | ") : "",
+        evaluatedById: first.evaluatedById ? {
+          _id: (first.evaluatedById as any)._id?.toString() || first.evaluatedById.toString(),
+          name: (first.evaluatedById as any).name || "Usthad",
+        } : undefined,
+        date: first.date || new Date(yearNum, monthNum - 1, 1),
+      };
+    });
+
+    // 2. Fetch legacy PracticalEvaluation records
+    const legacyEvaluations = await PracticalEvaluation.find({
+      studentId: studentObjectId,
     })
       .sort({ date: -1 })
       .populate("evaluatedById", "name");
+
+    // Merge evaluations: modern first, then legacy that don't have overlapping month
+    const modernMonthKeys = new Set(modernEvaluations.map((e) => e.month));
+    const nonOverlappingLegacy = legacyEvaluations.filter((le) => !le.month || !modernMonthKeys.has(le.month));
+
+    const allEvaluations = [...modernEvaluations, ...nonOverlappingLegacy].sort((a: any, b: any) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+
+    return allEvaluations;
   }
 
   /**
    * Get comprehensive practical report for a student
    */
   async getStudentPracticalReport(studentId: string): Promise<StudentPracticalReport> {
-    const evaluations = await PracticalEvaluation.find({
-      studentId: new mongoose.Types.ObjectId(studentId),
-    }).sort({ date: -1 });
+    const evaluations = await this.getStudentEvaluations(studentId);
 
     const totalEvaluations = evaluations.length;
     const categoryTotals: Record<string, { sum: number; count: number }> = {};
 
     let totalScoreSum = 0;
     for (const ev of evaluations) {
-      totalScoreSum += ev.overallScore;
-      for (const item of ev.scores) {
-        const current = categoryTotals[item.category] || { sum: 0, count: 0 };
+      totalScoreSum += (ev as any).overallScore || 0;
+      for (const item of (ev as any).scores || []) {
+        const catKey = item.category || item.subjectName || "Practical";
+        const current = categoryTotals[catKey] || { sum: 0, count: 0 };
         current.sum += item.score;
         current.count += 1;
-        categoryTotals[item.category] = current;
+        categoryTotals[catKey] = current;
       }
     }
 
@@ -1925,8 +2048,14 @@ export class MuallimService {
       }
     }
 
-    if (filter?.studentId && mongoose.Types.ObjectId.isValid(filter.studentId)) {
-      query.studentId = new mongoose.Types.ObjectId(filter.studentId);
+    if (filter?.studentId) {
+      if (mongoose.Types.ObjectId.isValid(filter.studentId)) {
+        query.studentId = {
+          $in: [new mongoose.Types.ObjectId(filter.studentId), filter.studentId],
+        };
+      } else {
+        query.studentId = filter.studentId;
+      }
     }
 
     if (filter?.classId && mongoose.Types.ObjectId.isValid(filter.classId)) {
