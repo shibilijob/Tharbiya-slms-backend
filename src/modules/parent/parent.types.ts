@@ -49,12 +49,25 @@ export interface ChildProfileDTO {
   recentAchievements: AchievementResponseDTO[];
 }
 
+export interface ChildAttendanceBacklogDTO {
+  id: string;
+  studentId: string;
+  classId: string;
+  year: number;
+  month: number;
+  monthName: string;
+  totalWorkingDays: number;
+  attendedDays: number;
+  percentage: number;
+}
+
 export interface ChildAttendanceDTO {
   studentId: string;
   studentName: string;
   className: string;
   summary: StudentAttendanceSummary;
   records: any[];
+  backlogs?: ChildAttendanceBacklogDTO[];
 }
 
 export interface ChildHifzDTO {

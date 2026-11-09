@@ -20,6 +20,14 @@ router.get(
   "/children/:studentId/attendance",
   parentController.getChildAttendance
 );
+router.get(
+  "/children/:studentId/attendance/backlog",
+  parentController.getChildAttendanceBacklog
+);
+router.get(
+  "/children/:studentId/backlog",
+  parentController.getChildAttendanceBacklog
+);
 router.get("/children/:studentId/hifz", parentController.getChildHifz);
 router.get(
   "/children/:studentId/practical",
