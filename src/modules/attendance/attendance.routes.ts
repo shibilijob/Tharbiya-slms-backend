@@ -34,6 +34,14 @@ router.get(
   attendanceController.getClassMonthlyBacklog
 );
 
+// Monthly Attendance Report Endpoint
+router.get(
+  "/monthly-report",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  attendanceController.getMonthlyAttendanceReport
+);
+
 // Card Badges Statistics Endpoint
 router.get(
   "/stats/class/:classId",

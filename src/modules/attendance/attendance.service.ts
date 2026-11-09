@@ -29,6 +29,13 @@ export class AttendanceService {
   }
 
   /**
+   * Get monthly attendance report for a class
+   */
+  async getMonthlyAttendanceReport(classId: string, year: number, month: number, muallimId?: string) {
+    return muallimService.getMonthlyAttendanceReport(classId, year, month, muallimId);
+  }
+
+  /**
    * Get class combined attendance stats (Current Month, Prev Months, Total) for cards
    */
   async getClassAttendanceStats(classId: string, targetDateStr?: string, muallimId?: string) {
