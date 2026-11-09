@@ -72,13 +72,23 @@ export class AssessmentController {
       return res.status(400).json({ success: false, message: "Invalid studentId" });
     }
 
-    const cls = await resolveClass(classId);
-    await muallimService.assertClassAssigned(actorId, cls.id);
-
-    const student = await Student.findOne({ _id: studentId, classId: cls._id, isActive: true });
+    const student = await Student.findOne({ _id: studentId, isActive: true });
     if (!student) {
-      return res.status(404).json({ success: false, message: "Student not found in this class" });
+      return res.status(404).json({ success: false, message: "Student not found" });
     }
+
+    let cls: any = null;
+    if (student.classId) {
+      cls = await Class.findById(student.classId);
+    }
+    if (!cls && classId) {
+      cls = await resolveClass(classId);
+    }
+    if (!cls) {
+      return res.status(404).json({ success: false, message: "Class not found for student" });
+    }
+
+    await muallimService.assertClassAssigned(actorId, cls.id);
 
     // 1. Fetch subjects assigned to this class
     const dbSubjects = await muallimService.getSubjects(cls.id, actorId);
@@ -157,13 +167,23 @@ export class AssessmentController {
       return res.status(400).json({ success: false, message: "Invalid studentId" });
     }
 
-    const cls = await resolveClass(classId);
-    await muallimService.assertClassAssigned(actorId, cls.id);
-
-    const student = await Student.findOne({ _id: studentId, classId: cls._id, isActive: true });
+    const student = await Student.findOne({ _id: studentId, isActive: true });
     if (!student) {
-      return res.status(403).json({ success: false, message: "Student does not belong to the selected class" });
+      return res.status(404).json({ success: false, message: "Student not found" });
     }
+
+    let cls: any = null;
+    if (student.classId) {
+      cls = await Class.findById(student.classId);
+    }
+    if (!cls && classId) {
+      cls = await resolveClass(classId);
+    }
+    if (!cls) {
+      return res.status(404).json({ success: false, message: "Class not found for student" });
+    }
+
+    await muallimService.assertClassAssigned(actorId, cls.id);
 
     // Lookup subjects to ensure subjectName is captured
     const dbSubjects = await muallimService.getSubjects(cls.id, actorId);
@@ -254,10 +274,21 @@ export class AssessmentController {
     if (!classId || !mongoose.Types.ObjectId.isValid(studentId) || !subject || !examTerm || !date || !grade || !Number.isFinite(Number(maxMarks)) || !Number.isFinite(Number(obtainedMarks)) || Number(maxMarks) <= 0 || Number(obtainedMarks) < 0 || Number(obtainedMarks) > Number(maxMarks)) {
       return res.status(400).json({ success: false, message: "Valid class, student, subject, term, date, and marks are required" });
     }
-    const cls = await resolveClass(classId);
+    const student = await Student.findOne({ _id: studentId, isActive: true });
+    if (!student) return res.status(404).json({ success: false, message: "Student not found" });
+
+    let cls: any = null;
+    if (student.classId) {
+      cls = await Class.findById(student.classId);
+    }
+    if (!cls && classId) {
+      cls = await resolveClass(classId);
+    }
+    if (!cls) {
+      return res.status(404).json({ success: false, message: "Class not found for student" });
+    }
+
     await muallimService.assertClassAssigned(actorId, cls.id);
-    const student = await Student.findOne({ _id: studentId, classId: cls._id, isActive: true });
-    if (!student) return res.status(403).json({ success: false, message: "Student does not belong to the selected class" });
     const saved = await AssessmentModel.findOneAndUpdate(
       { studentId, subject: String(subject), examTerm: String(examTerm) },
       { $set: { classId: cls._id, studentId, subject: String(subject), examTerm: String(examTerm), date: new Date(date), maxMarks: Number(maxMarks), obtainedMarks: Number(obtainedMarks), grade, remarks: String(remarks || ""), teacherId: actorId } },

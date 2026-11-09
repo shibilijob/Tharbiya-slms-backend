@@ -449,6 +449,122 @@ export class MuallimService {
   }
 
   /**
+   * Calculate monthly attendance report for all students in a class
+   * Columns: Student Name, Present, Total Working Days
+   * - Present = Number of days the student was marked Present in the selected month
+   * - Total Working Days = Total actual working days in the selected month in monthly backlog or attendance collection recorded as present or absent or leave, excluding recorded holidays
+   */
+  async getMonthlyAttendanceReport(classId: string, year: number, month: number, muallimId?: string) {
+    const classObjectId = await this.resolveClassObjectId(classId);
+    if (muallimId && mongoose.Types.ObjectId.isValid(muallimId)) {
+      await this.assertClassAssigned(muallimId, classObjectId.toString());
+    }
+
+    const targetYear = Number(year) || new Date().getFullYear();
+    const targetMonth = Number(month) || new Date().getMonth() + 1;
+
+    const startOfMonth = new Date(Date.UTC(targetYear, targetMonth - 1, 1, 0, 0, 0, 0));
+    const endOfMonth = new Date(Date.UTC(targetYear, targetMonth, 0, 23, 59, 59, 999));
+
+    // 1. Fetch all active students in class
+    const students = await Student.find({
+      classId: classObjectId,
+      isActive: true,
+    }).select("_id name admissionNumber nameMalayalam").sort({ name: 1 });
+
+    const studentIds = students.map((s) => s._id);
+    const studentObjectIds = studentIds.map((id) => new mongoose.Types.ObjectId(id));
+
+    // 2. Fetch daily attendance records for this month
+    const currentMonthRecords = await Attendance.find({
+      $or: [
+        { classId: classObjectId },
+        { studentId: { $in: studentObjectIds } },
+      ],
+      date: { $gte: startOfMonth, $lte: endOfMonth },
+    }).lean();
+
+    // 3. Fetch monthly backlog records for this month
+    const backlogRecords = await MonthlyAttendanceBacklog.find({
+      $or: [
+        { classId: classObjectId },
+        { studentId: { $in: studentObjectIds } },
+      ],
+      year: targetYear,
+      month: targetMonth,
+    }).lean();
+
+    // 4. Calculate total unique marked school days for this class in current month (excluding recorded holidays)
+    const classSchoolDates = new Set<string>();
+    for (const r of currentMonthRecords) {
+      if (r.status && r.status !== "HOLIDAY") {
+        const dStr = r.date instanceof Date ? r.date.toISOString().split("T")[0] : String(r.date).split("T")[0];
+        classSchoolDates.add(dStr);
+      }
+    }
+    const dailyClassWorkingDays = classSchoolDates.size;
+
+    // Check if backlog has a common totalWorkingDays
+    let backlogClassWorkingDays = 0;
+    if (backlogRecords.length > 0) {
+      backlogClassWorkingDays = Number(backlogRecords[0].totalWorkingDays) || 0;
+    }
+
+    const defaultClassWorkingDays = Math.max(dailyClassWorkingDays, backlogClassWorkingDays);
+
+    const records = students.map((student) => {
+      const sId = student._id.toString();
+
+      // Daily attendance for student
+      const sDailyRecs = currentMonthRecords.filter((r) => String(r.studentId) === sId);
+      const dailyPresent = sDailyRecs.filter((r) => r.status === "PRESENT").length;
+      const studentNonHolidayDates = new Set(
+        sDailyRecs
+          .filter((r) => r.status && r.status !== "HOLIDAY")
+          .map((r) => (r.date instanceof Date ? r.date.toISOString().split("T")[0] : String(r.date).split("T")[0]))
+      );
+      const dailyWorking = Math.max(dailyClassWorkingDays, studentNonHolidayDates.size);
+
+      // Backlog for student
+      const sBacklog = backlogRecords.find((b) => String(b.studentId) === sId);
+      const backlogPresent = sBacklog ? Number(sBacklog.attendedDays) || 0 : 0;
+      const backlogWorking = sBacklog ? Number(sBacklog.totalWorkingDays) || 0 : backlogClassWorkingDays;
+
+      let present = 0;
+      let totalWorkingDays = defaultClassWorkingDays;
+
+      if (sBacklog && (sBacklog.totalWorkingDays > 0 || sBacklog.attendedDays > 0)) {
+        if (dailyWorking > 0 && dailyPresent > 0) {
+          present = Math.max(dailyPresent, backlogPresent);
+          totalWorkingDays = Math.max(dailyWorking, backlogWorking, defaultClassWorkingDays);
+        } else {
+          present = backlogPresent;
+          totalWorkingDays = backlogWorking || defaultClassWorkingDays;
+        }
+      } else {
+        present = dailyPresent;
+        totalWorkingDays = dailyWorking || defaultClassWorkingDays;
+      }
+
+      return {
+        studentId: sId,
+        studentName: student.name,
+        admissionNo: student.admissionNumber || "",
+        malayalamName: student.nameMalayalam || "",
+        present,
+        totalWorkingDays,
+      };
+    });
+
+    return {
+      year: targetYear,
+      month: targetMonth,
+      classId: classObjectId.toString(),
+      records,
+    };
+  }
+
+  /**
    * Calculate combined attendance statistics (Current Month, Prev Months, Total) for student cards
    */
   async getClassAttendanceStats(

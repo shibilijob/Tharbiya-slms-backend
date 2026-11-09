@@ -72,6 +72,26 @@ export class AttendanceController {
   });
 
   /**
+   * Get monthly attendance report for a class (Student Name, Present, Total Working Days)
+   */
+  getMonthlyAttendanceReport = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const classId = String(req.query.classId || "");
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    const month = req.query.month ? Number(req.query.month) : new Date().getMonth() + 1;
+
+    if (!classId) {
+      return res.status(400).json({ success: false, message: "classId is required" });
+    }
+
+    const report = await attendanceService.getMonthlyAttendanceReport(classId, year, month, req.user?.id);
+    return res.json({
+      success: true,
+      data: report,
+      records: report.records,
+    });
+  });
+
+  /**
    * Get combined class attendance stats (Current Month, Prev Months, Total) for card badges
    */
   getClassAttendanceStats = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
