@@ -411,11 +411,17 @@ export class MuallimService {
    */
   async saveMonthlyBacklog(data: SaveMonthlyBacklogDTO, muallimId?: string) {
     const classObjectId = await this.resolveClassObjectId(data.classId);
+
     if (muallimId && mongoose.Types.ObjectId.isValid(muallimId)) {
       await this.assertClassAssigned(muallimId, classObjectId.toString());
     }
 
-    if (!data.year || !data.month || data.totalWorkingDays === undefined || !Array.isArray(data.studentsData)) {
+    if (
+      !data.year ||
+      !data.month ||
+      data.totalWorkingDays === undefined ||
+      !Array.isArray(data.studentsData)
+    ) {
       throw new AppError("Invalid monthly backlog payload", 400);
     }
 
@@ -423,38 +429,77 @@ export class MuallimService {
     const monthNum = Number(data.month);
     const totalWorking = Number(data.totalWorkingDays) || 0;
 
-    const studentIds = data.studentsData.map((item) => item.studentId);
-    const studentObjectIds = studentIds
-      .filter((id) => mongoose.Types.ObjectId.isValid(id))
-      .map((id) => new mongoose.Types.ObjectId(id));
+    // Validate and remove duplicate student IDs from payload
+    const uniqueStudents = new Map<string, typeof data.studentsData[number]>();
 
-    // Delete existing records for the given classId, year, month, and studentIds
-    await MonthlyAttendanceBacklog.deleteMany({
-      classId: classObjectId,
-      year: yearNum,
-      month: monthNum,
-      studentId: { $in: [...studentObjectIds, ...studentIds] },
-    });
+    for (const item of data.studentsData) {
+      if (!mongoose.Types.ObjectId.isValid(item.studentId)) {
+        throw new AppError(`Invalid student ID: ${item.studentId}`, 400);
+      }
 
-    // Insert the new updated records
-    const documentsToInsert = data.studentsData.map((item) => ({
-      studentId: new mongoose.Types.ObjectId(item.studentId),
-      classId: classObjectId,
-      year: yearNum,
-      month: monthNum,
-      monthName: data.monthName || "",
-      totalWorkingDays: totalWorking,
-      attendedDays: Number(item.attendedDays) || 0,
-    }));
-
-    if (documentsToInsert.length > 0) {
-      await MonthlyAttendanceBacklog.insertMany(documentsToInsert);
+      uniqueStudents.set(item.studentId.toString(), item);
     }
 
+    // Update existing records or create new records
+    // Match strictly by studentId + year + month
+    const operations = Array.from(uniqueStudents.values()).map((item) => {
+      const studentObjectId = new mongoose.Types.ObjectId(item.studentId);
+
+      return {
+        updateOne: {
+          filter: {
+            studentId: studentObjectId,
+            year: yearNum,
+            month: monthNum,
+          },
+          update: {
+            $set: {
+              classId: classObjectId,
+              monthName: data.monthName || "",
+              totalWorkingDays: totalWorking,
+              attendedDays: Number(item.attendedDays) || 0,
+            },
+          },
+          upsert: true,
+        },
+      };
+    });
+
+    if (operations.length > 0) {
+      try {
+        await MonthlyAttendanceBacklog.bulkWrite(operations, { ordered: false });
+      } catch (err: any) {
+        // Handle race conditions/concurrency where multiple requests attempt to upsert simultaneously
+        const isDuplicateKeyError =
+          err.code === 11000 ||
+          (err.message && err.message.includes("E11000")) ||
+          (Array.isArray(err.writeErrors) && err.writeErrors.some((we: any) => we.code === 11000));
+
+        if (isDuplicateKeyError) {
+          // If a concurrent insert conflict occurred and the record now exists, update in-place without upsert
+          const retryOperations = operations.map((op) => ({
+            updateOne: {
+              filter: op.updateOne.filter,
+              update: op.updateOne.update,
+              upsert: false,
+            },
+          }));
+          await MonthlyAttendanceBacklog.bulkWrite(retryOperations, { ordered: false });
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    // Fetch updated records
+    const updatedStudentIds = operations.map((op) => op.updateOne.filter.studentId);
     const records = await MonthlyAttendanceBacklog.find({
-      classId: classObjectId,
       year: yearNum,
       month: monthNum,
+      $or: [
+        { classId: classObjectId },
+        { studentId: { $in: updatedStudentIds } },
+      ],
     }).populate("studentId", "name admissionNumber gender");
 
     return {
@@ -472,7 +517,15 @@ export class MuallimService {
       await this.assertClassAssigned(muallimId, classObjectId.toString());
     }
 
-    const query: any = { classId: classObjectId };
+    const students = await Student.find({ classId: classObjectId }).select("_id").lean();
+    const studentObjectIds = students.map((s) => new mongoose.Types.ObjectId(s._id));
+
+    const query: any = {
+      $or: [
+        { classId: classObjectId },
+        { studentId: { $in: studentObjectIds } },
+      ],
+    };
     if (year) query.year = Number(year);
     if (month) query.month = Number(month);
 
@@ -1258,10 +1311,10 @@ export class MuallimService {
 
     const awardsGivenCount = mongoose.Types.ObjectId.isValid(muallimId)
       ? await Achievement.countDocuments({
-          awardedById: new mongoose.Types.ObjectId(muallimId),
-          classId: { $in: classIds },
-          isActive: true,
-        })
+        awardedById: new mongoose.Types.ObjectId(muallimId),
+        classId: { $in: classIds },
+        isActive: true,
+      })
       : 0;
 
     return {
