@@ -1,6 +1,8 @@
 import type { Response } from "express";
 import type { AuthenticatedRequest } from "../auth/auth.middleware.js";
 import { muallimService } from "./muallim.service.js";
+import { muallimAttendanceService } from "../muallimAttendance/muallimAttendance.service.js";
+import { AppError } from "../../utils/AppError.js";
 import {
   validateMarkAttendanceInput,
   validatePracticalEvaluationInput,
@@ -671,6 +673,87 @@ export class MuallimController {
       message: result.message,
       data: { id: result.deletedId },
     });
+  });
+
+  /**
+   * =========================================================================
+   * PERSONAL MUALLIM ATTENDANCE HANDLERS (READ-ONLY)
+   * =========================================================================
+   */
+
+  /**
+   * GET /api/muallim/my-attendance
+   * Personal monthly attendance report for authenticated Muallim
+   * Security: strictly uses req.user.id; never client-supplied query/body userId.
+   */
+  getMyAttendance = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new AppError("Authenticated user required", 401);
+    }
+
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+
+    const report = await muallimAttendanceService.getMonthlyReport(year, month, userId);
+    const summary = report.summaries[0] || null;
+
+    return res.json({
+      success: true,
+      data: {
+        year: report.year,
+        month: report.month,
+        monthName: report.monthName,
+        daysInMonth: report.daysInMonth,
+        markedDatesCount: report.markedDatesCount,
+        muallim: summary?.muallim || {
+          id: userId,
+          name: req.user?.name || "Muallim",
+          phone: req.user?.phone || "",
+          designation: req.user?.designation || "Muallim",
+          assignedClasses: [],
+        },
+        stats: summary?.stats || {
+          totalScheduledShifts: 0,
+          presentShifts: 0,
+          clShifts: 0,
+          hplShifts: 0,
+          llpShifts: 0,
+          holidayShifts: 0,
+          notRecordedShifts: 0,
+          presentDayEquivalent: 0,
+          clDayEquivalent: 0,
+          hplDayEquivalent: 0,
+          llpDayEquivalent: 0,
+          holidayDayEquivalent: 0,
+          attendancePercentage: 0,
+        },
+        dailyRecords: summary?.dailyRecords || [],
+      },
+    });
+  });
+
+  /**
+   * GET /api/muallim/my-attendance/export-pdf
+   * PDF download for personal monthly attendance report
+   */
+  exportMyAttendancePdf = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new AppError("Authenticated user required", 401);
+    }
+
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const month = Number(req.query.month) || (new Date().getMonth() + 1);
+
+    const pdfBuffer = await muallimAttendanceService.exportMonthlyPdf(year, month, userId);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="My_Attendance_${year}_${month}.pdf"`
+    );
+    return res.send(pdfBuffer);
   });
 }
 
