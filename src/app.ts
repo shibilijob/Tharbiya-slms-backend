@@ -57,6 +57,7 @@ import User from "./models/User.js";
 app.use("/api/auth", authRoutes);
 
 import assessmentRoutes from "./modules/assessment/assessment.routes.js";
+import { muallimAttendanceRoutes } from "./modules/muallimAttendance/index.js";
 
 // 4. Mount Better Auth Handler for remaining Better Auth endpoints
 app.all("/api/auth/*splat", toNodeHandler(auth));
@@ -64,6 +65,8 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api/hifz", hifzRoutes);
 app.use("/api/practical", practicalRoutes);
 app.use("/api/sadhr", sadhrRoutes);
+app.use("/api/institutional/muallim-attendance", muallimAttendanceRoutes);
+app.use("/api/sadhr/muallim-attendance", muallimAttendanceRoutes);
 app.use("/api/muallim", muallimRoutes);
 app.use("/api/parent", parentRoutes);
 app.use("/api/assessment", assessmentRoutes);

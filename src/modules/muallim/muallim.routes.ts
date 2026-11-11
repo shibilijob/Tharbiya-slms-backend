@@ -305,6 +305,22 @@ router.delete(
   muallimController.deletePeriod
 );
 
+/**
+ * Personal Attendance Operations (Strictly Read-Only for Authenticated Muallim)
+ */
+router.get(
+  "/my-attendance",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  muallimController.getMyAttendance
+);
+router.get(
+  "/my-attendance/export-pdf",
+  requireAuth,
+  requireRole(["MUALLIM", "SADHR_MUALLIM"]),
+  muallimController.exportMyAttendancePdf
+);
+
 export default router;
 
 
