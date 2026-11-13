@@ -66,7 +66,9 @@ export class MuallimController {
     }
 
     const muallimId = req.user?.id || "";
-    const students = await muallimService.getClassStudents(classId, muallimId);
+    const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+    const students = await muallimService.getClassStudents(classId, muallimId, page, limit);
 
     return res.json({
       success: true,
