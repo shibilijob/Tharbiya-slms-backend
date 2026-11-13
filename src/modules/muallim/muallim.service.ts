@@ -1232,7 +1232,7 @@ export class MuallimService {
   /**
    * Get all active students enrolled in a specific class
    */
-  async getClassStudents(classId: string, muallimId?: string) {
+  async getClassStudents(classId: string, muallimId?: string, page?: number, limit?: number) {
     if (muallimId) {
       const context = await this.getTeacherContext(muallimId);
       const isAllowed = this.isClassAssignedToTeacher(
@@ -1259,7 +1259,7 @@ export class MuallimService {
       }
     }
 
-    const students = await Student.find({
+    let query = Student.find({
       classId: new mongoose.Types.ObjectId(targetClassId),
       isActive: true,
     })
@@ -1267,6 +1267,13 @@ export class MuallimService {
       .populate("classId", "name division")
       .sort({ name: 1 });
 
+    if (page && limit) {
+      const p = Math.max(1, page);
+      const l = Math.max(1, limit);
+      query = query.skip((p - 1) * l).limit(l);
+    }
+
+    const students = await query;
     return students;
   }
 
