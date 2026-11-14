@@ -66,14 +66,38 @@ export class MuallimController {
     }
 
     const muallimId = req.user?.id || "";
+    const userRole = req.user?.role || "";
     const page = req.query.page ? parseInt(req.query.page as string, 10) : undefined;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
-    const students = await muallimService.getClassStudents(classId, muallimId, page, limit);
+    const students = await muallimService.getClassStudents(classId, muallimId, page, limit, userRole);
 
     return res.json({
       success: true,
       count: students.length,
       data: students,
+    });
+  });
+
+  /**
+   * Assign, edit, or clear student roll number
+   */
+  updateStudentRollNumber = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const studentId = String(req.params.studentId || "");
+    const { rollNumber } = req.body;
+    const actorId = req.user?.id || "";
+    const actorRole = req.user?.role || "";
+
+    const updatedStudent = await muallimService.updateStudentRollNumber(
+      studentId,
+      rollNumber,
+      actorId,
+      actorRole
+    );
+
+    return res.json({
+      success: true,
+      message: "Student roll number updated successfully",
+      data: updatedStudent,
     });
   });
 

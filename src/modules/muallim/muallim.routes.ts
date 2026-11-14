@@ -24,6 +24,12 @@ router.get(
   requireRole(facultyRoles),
   muallimController.getClassStudents
 );
+router.patch(
+  "/students/:studentId/roll-number",
+  requireAuth,
+  requireRole(facultyRoles),
+  muallimController.updateStudentRollNumber
+);
 
 /**
  * Attendance Operations

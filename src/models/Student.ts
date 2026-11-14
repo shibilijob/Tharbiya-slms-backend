@@ -2,6 +2,7 @@ import mongoose, { Document, Schema, Types } from "mongoose";
 
 export interface IStudent extends Document {
   admissionNumber: string;
+  rollNumber?: number | null;
   name: string;
   nameMalayalam?: string;
   phone?: string;
@@ -27,6 +28,11 @@ const studentSchema = new Schema<IStudent>(
       required: true,
       unique: true,
       trim: true,
+    },
+
+    rollNumber: {
+      type: Number,
+      default: null,
     },
 
     name: {
@@ -90,6 +96,18 @@ const studentSchema = new Schema<IStudent>(
   },
   {
     timestamps: true,
+  }
+);
+
+// Class-specific unique index for non-null roll numbers
+studentSchema.index(
+  { classId: 1, rollNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      rollNumber: { $type: "number" },
+      isActive: true,
+    },
   }
 );
 

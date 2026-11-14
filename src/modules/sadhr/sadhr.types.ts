@@ -29,6 +29,7 @@ export interface CreateAnnouncementDTO {
  */
 export interface CreateStudentDTO {
   admissionNumber: string;
+  rollNumber?: number | null;
   name: string;
   dateOfBirth?: string;
   gender: "MALE" | "FEMALE";
@@ -44,6 +45,7 @@ export interface CreateStudentDTO {
 
 export interface UpdateStudentDTO {
   admissionNumber?: string;
+  rollNumber?: number | null;
   name?: string;
   dateOfBirth?: string;
   gender?: "MALE" | "FEMALE";
