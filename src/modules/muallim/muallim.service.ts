@@ -558,7 +558,16 @@ export class MuallimService {
     const students = await Student.find({
       classId: classObjectId,
       isActive: true,
-    }).select("_id name admissionNumber nameMalayalam").sort({ name: 1 });
+    }).select("_id name admissionNumber nameMalayalam rollNumber");
+
+    students.sort((a, b) => {
+      const aHas = typeof a.rollNumber === "number" && a.rollNumber > 0;
+      const bHas = typeof b.rollNumber === "number" && b.rollNumber > 0;
+      if (aHas && bHas) return (a.rollNumber as number) - (b.rollNumber as number);
+      if (aHas && !bHas) return -1;
+      if (!aHas && bHas) return 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
 
     const studentIds = students.map((s) => s._id);
     const studentObjectIds = studentIds.map((id) => new mongoose.Types.ObjectId(id));
@@ -637,6 +646,7 @@ export class MuallimService {
       return {
         studentId: sId,
         studentName: student.name,
+        rollNumber: student.rollNumber ?? null,
         admissionNo: student.admissionNumber || "",
         malayalamName: student.nameMalayalam || "",
         present,
@@ -1232,49 +1242,159 @@ export class MuallimService {
   /**
    * Get all active students enrolled in a specific class
    */
-  async getClassStudents(classId: string, muallimId?: string, page?: number, limit?: number) {
-    if (muallimId) {
+  async getClassStudents(
+    classId: string,
+    muallimId?: string,
+    page?: number,
+    limit?: number,
+    actorRole?: string
+  ) {
+    const isSadhrOrAdmin =
+      actorRole === "SADHR_MUALLIM" ||
+      actorRole === "ADMIN" ||
+      actorRole === "SUPER_ADMIN";
+
+    // Regular Muallim restriction: Only regular Muallims are restricted to assigned classes
+    if (muallimId && !isSadhrOrAdmin) {
       const context = await this.getTeacherContext(muallimId);
-      const isAllowed = this.isClassAssignedToTeacher(
-        classId,
-        context.assignedClassIds,
-        context.assignedClassNames
-      );
-      if (!isAllowed) {
-        return [];
+      const isSadhrUser = (context.user as any)?.role === "SADHR_MUALLIM";
+      if (!isSadhrUser) {
+        const isAllowed = this.isClassAssignedToTeacher(
+          classId,
+          context.assignedClassIds,
+          context.assignedClassNames
+        );
+        if (!isAllowed) {
+          return [];
+        }
       }
     }
 
-    let targetClassId = classId;
-    if (!mongoose.Types.ObjectId.isValid(classId)) {
-      const cleanClsName = classId.replace(/^Class\s*/i, "").trim();
-      const cls = await Class.findOne({
-        name: { $regex: new RegExp(`^Class\\s*${cleanClsName}$|^${cleanClsName}$`, "i") },
-        isActive: true,
-      });
-      if (cls) {
-        targetClassId = cls._id.toString();
-      } else {
-        return [];
-      }
+    let classObjectId: mongoose.Types.ObjectId;
+    try {
+      classObjectId = await this.resolveClassObjectId(classId);
+    } catch {
+      return [];
     }
 
-    let query = Student.find({
-      classId: new mongoose.Types.ObjectId(targetClassId),
-      isActive: true,
-    })
-      .populate("parentId", "name phone email")
-      .populate("classId", "name division")
-      .sort({ name: 1 });
+    const pipeline: any[] = [
+      {
+        $match: {
+          classId: classObjectId,
+          isActive: true,
+        },
+      },
+      {
+        $addFields: {
+          hasRollNumber: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ["$rollNumber", null] },
+                  { $gt: ["$rollNumber", 0] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+      {
+        $sort: {
+          hasRollNumber: -1,
+          rollNumber: 1,
+          name: 1,
+        },
+      },
+    ];
 
     if (page && limit) {
       const p = Math.max(1, page);
       const l = Math.max(1, limit);
-      query = query.skip((p - 1) * l).limit(l);
+      pipeline.push({ $skip: (p - 1) * l }, { $limit: l });
     }
 
-    const students = await query;
+    const rawStudents = await Student.aggregate(pipeline);
+    const students = await Student.populate(rawStudents, [
+      { path: "parentId", select: "name phone email" },
+      { path: "classId", select: "name division" },
+    ]);
+
     return students;
+  }
+
+  /**
+   * Assign, edit, or clear a student's roll number.
+   * - Muallim: Can only modify students belonging to their assigned classes.
+   * - Sadhr Muallim / Admin: Can modify students across any class.
+   * - Roll Number must be a positive whole number (>= 1) or null (to clear).
+   * - Must be unique within the same class.
+   */
+  async updateStudentRollNumber(
+    studentId: string,
+    rollNumber: number | null | undefined,
+    actorId: string,
+    actorRole?: string
+  ) {
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      throw new AppError("Invalid student ID", 400);
+    }
+
+    const student = await Student.findOne({ _id: studentId, isActive: true });
+    if (!student) {
+      throw new AppError("Student not found", 404);
+    }
+
+    // Role-based authorization
+    if (actorRole === "MUALLIM") {
+      const context = await this.getTeacherContext(actorId);
+      const isAllowed = this.isClassAssignedToTeacher(
+        student.classId.toString(),
+        context.assignedClassIds,
+        context.assignedClassNames
+      );
+      if (!isAllowed) {
+        throw new AppError("You can only manage roll numbers for students in your assigned classes", 403);
+      }
+    }
+
+    // Validate and update rollNumber
+    if (
+      rollNumber === null ||
+      rollNumber === undefined ||
+      (typeof rollNumber === "string" && (String(rollNumber).trim() === "" || String(rollNumber).trim() === "null"))
+    ) {
+      student.rollNumber = null;
+    } else {
+      const num = Number(rollNumber);
+      if (!Number.isInteger(num) || num < 1) {
+        throw new AppError("Roll Number must be a positive whole number", 400);
+      }
+
+      // Check duplicate within the same class
+      const existing = await Student.findOne({
+        classId: student.classId,
+        rollNumber: num,
+        _id: { $ne: student._id },
+        isActive: true,
+      });
+
+      if (existing) {
+        throw new AppError(`Roll Number ${num} is already assigned to another student in this class`, 400);
+      }
+
+      student.rollNumber = num;
+    }
+
+    await student.save();
+
+    await student.populate([
+      { path: "parentId", select: "name phone email" },
+      { path: "classId", select: "name division" },
+    ]);
+
+    return student;
   }
 
   /**

@@ -406,6 +406,24 @@ export class SadhrService {
       studentPayload.address = data.address.trim();
     }
 
+    if (data.rollNumber !== undefined && data.rollNumber !== null && data.rollNumber !== "" && data.rollNumber !== "null") {
+      const num = Number(data.rollNumber);
+      if (!Number.isInteger(num) || num < 1) {
+        throw new Error("Roll Number must be a positive whole number");
+      }
+      const existing = await Student.findOne({
+        classId: classIdObj,
+        rollNumber: num,
+        isActive: true,
+      });
+      if (existing) {
+        throw new Error(`Roll Number ${num} is already assigned to another student in this class`);
+      }
+      studentPayload.rollNumber = num;
+    } else {
+      studentPayload.rollNumber = null;
+    }
+
     const student = await Student.create(studentPayload);
 
     await student.populate([
@@ -475,17 +493,46 @@ export class SadhrService {
 
     const total = await Student.countDocuments(filter);
 
-    const students = await Student.find(filter)
-      .populate("parentId", "name phone email")
-      .populate({
+    const pipeline: any[] = [
+      { $match: filter },
+      {
+        $addFields: {
+          hasRollNumber: {
+            $cond: [
+              {
+                $and: [
+                  { $ne: ["$rollNumber", null] },
+                  { $gt: ["$rollNumber", 0] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+      {
+        $sort: {
+          hasRollNumber: -1,
+          rollNumber: 1,
+          name: 1,
+          createdAt: -1,
+        },
+      },
+      { $skip: skip },
+      { $limit: limit },
+    ];
+
+    const rawStudents = await Student.aggregate(pipeline);
+    const students = await Student.populate(rawStudents, [
+      { path: "parentId", select: "name phone email" },
+      {
         path: "classId",
         select: "name division classTeacherId",
         populate: { path: "classTeacherId", select: "name phone designation" },
-      })
-      .populate("academicYearId", "name startDate endDate")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+      },
+      { path: "academicYearId", select: "name startDate endDate" },
+    ]);
 
     const totalPages = Math.ceil(total / limit) || 1;
 
@@ -631,6 +678,29 @@ export class SadhrService {
     // Admission date
     if (data.admissionDate !== undefined) {
       student.admissionDate = new Date(data.admissionDate);
+    }
+
+    // Roll number
+    if (data.rollNumber !== undefined) {
+      if (data.rollNumber === null || data.rollNumber === "" || data.rollNumber === "null") {
+        student.rollNumber = null;
+      } else {
+        const num = Number(data.rollNumber);
+        if (!Number.isInteger(num) || num < 1) {
+          throw new Error("Roll Number must be a positive whole number");
+        }
+        const targetClassId = student.classId;
+        const existing = await Student.findOne({
+          classId: targetClassId,
+          rollNumber: num,
+          _id: { $ne: student._id },
+          isActive: true,
+        });
+        if (existing) {
+          throw new Error(`Roll Number ${num} is already assigned to another student in this class`);
+        }
+        student.rollNumber = num;
+      }
     }
 
     // Ensure required fields before saving
