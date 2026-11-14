@@ -1,5 +1,36 @@
 import PDFDocument from "pdfkit";
 
+export function formatLeaveDays(
+  dayEquivalent: number | null | undefined,
+  shifts?: number | null | undefined
+): string {
+  if (shifts !== undefined && shifts !== null && !isNaN(Number(shifts))) {
+    const s = Math.round(Number(shifts));
+    if (s <= 0) return "0";
+    const whole = Math.floor(s / 3);
+    const rem = s % 3;
+
+    if (rem === 1) return whole > 0 ? `${whole}⅓` : "⅓";
+    if (rem === 2) return whole > 0 ? `${whole}⅔` : "⅔";
+    return whole.toString();
+  }
+
+  if (dayEquivalent === undefined || dayEquivalent === null || isNaN(Number(dayEquivalent))) {
+    return "0";
+  }
+
+  const val = Number(dayEquivalent);
+  if (val <= 0) return "0";
+
+  const nearestThird = Math.round(val * 3);
+  const whole = Math.floor(nearestThird / 3);
+  const rem = nearestThird % 3;
+
+  if (rem === 1) return whole > 0 ? `${whole}⅓` : "⅓";
+  if (rem === 2) return whole > 0 ? `${whole}⅔` : "⅔";
+  return whole.toString();
+}
+
 export interface MuallimPdfDayRecord {
   dateStr: string;
   dayNumber: number;
@@ -33,6 +64,12 @@ export interface MuallimPdfReportItem {
     llpDayEquivalent: number;
     holidayDayEquivalent: number;
     attendancePercentage: number;
+    cumulativeClShifts?: number;
+    cumulativeHplShifts?: number;
+    cumulativeLlpShifts?: number;
+    cumulativeClDayEquivalent?: number;
+    cumulativeHplDayEquivalent?: number;
+    cumulativeLlpDayEquivalent?: number;
   };
   dailyRecords: MuallimPdfDayRecord[];
 }
@@ -142,19 +179,19 @@ export const generateMuallimMonthlyAttendancePdf = async (
       {
         label: "Casual Leave",
         val: `${item.stats.clShifts} shifts`,
-        sub: `${item.stats.clDayEquivalent} days`,
+        sub: `${formatLeaveDays(item.stats.clDayEquivalent, item.stats.clShifts)} days`,
         color: "#2563EB",
       },
       {
         label: "Half Pay Leave",
         val: `${item.stats.hplShifts} shifts`,
-        sub: `${item.stats.hplDayEquivalent} days`,
+        sub: `${formatLeaveDays(item.stats.hplDayEquivalent, item.stats.hplShifts)} days`,
         color: "#D97706",
       },
       {
         label: "Leave W/O Pay",
         val: `${item.stats.llpShifts} shifts`,
-        sub: `${item.stats.llpDayEquivalent} days`,
+        sub: `${formatLeaveDays(item.stats.llpDayEquivalent, item.stats.llpShifts)} days`,
         color: "#DC2626",
       },
       {
