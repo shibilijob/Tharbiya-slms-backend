@@ -348,6 +348,7 @@ export class MuallimAttendanceService {
     const startOfMonth = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
     const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
     const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const startOfYear = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
 
     // 1. Fetch active Muallims
     const muallims = await this.getActiveMuallims();
@@ -359,15 +360,21 @@ export class MuallimAttendanceService {
       throw new AppError("Muallim not found or inactive", 404);
     }
 
-    // 2. Fetch all attendance records for this month
-    const query: any = {
-      date: { $gte: startOfMonth, $lte: endOfMonth },
+    // 2. Fetch all attendance records from start of year (January 1) through end of selected month
+    const ytdQuery: any = {
+      date: { $gte: startOfYear, $lte: endOfMonth },
     };
     if (userId) {
-      query.userId = new mongoose.Types.ObjectId(userId);
+      ytdQuery.userId = new mongoose.Types.ObjectId(userId);
     }
 
-    const records = await MuallimAttendance.find(query).lean();
+    const allYtdRecords = await MuallimAttendance.find(ytdQuery).lean();
+
+    // Month's records (for the selected month only)
+    const records = allYtdRecords.filter((r) => {
+      const rTime = new Date(r.date).getTime();
+      return rTime >= startOfMonth.getTime() && rTime <= endOfMonth.getTime();
+    });
 
     // 3. Find unique dates in this month where attendance was marked across the institution
     const institutionMarkedDates = new Set<string>();
@@ -379,6 +386,9 @@ export class MuallimAttendanceService {
     // 4. Compute summaries per Muallim
     const summaries = targetMuallims.map((m) => {
       const mRecords = records.filter(
+        (r) => r.userId.toString() === m.id.toString()
+      );
+      const mYtdRecords = allYtdRecords.filter(
         (r) => r.userId.toString() === m.id.toString()
       );
 
@@ -501,6 +511,21 @@ export class MuallimAttendanceService {
       const llpDayEquivalent = Number((llpShifts / 3).toFixed(2));
       const holidayDayEquivalent = Number((holidayShifts / 3).toFixed(2));
 
+      // Cumulative leaves from January 1 up to and including the selected month
+      let cumulativeClShifts = 0;
+      let cumulativeHplShifts = 0;
+      let cumulativeLlpShifts = 0;
+
+      for (const r of mYtdRecords) {
+        if (r.status === "CL") cumulativeClShifts++;
+        else if (r.status === "HPL") cumulativeHplShifts++;
+        else if (r.status === "LLP") cumulativeLlpShifts++;
+      }
+
+      const cumulativeClDayEquivalent = Number((cumulativeClShifts / 3).toFixed(2));
+      const cumulativeHplDayEquivalent = Number((cumulativeHplShifts / 3).toFixed(2));
+      const cumulativeLlpDayEquivalent = Number((cumulativeLlpShifts / 3).toFixed(2));
+
       return {
         muallim: m,
         stats: {
@@ -517,6 +542,12 @@ export class MuallimAttendanceService {
           llpDayEquivalent,
           holidayDayEquivalent,
           attendancePercentage,
+          cumulativeClShifts,
+          cumulativeHplShifts,
+          cumulativeLlpShifts,
+          cumulativeClDayEquivalent,
+          cumulativeHplDayEquivalent,
+          cumulativeLlpDayEquivalent,
         },
         dailyRecords: Object.values(dailyMap),
       };
