@@ -998,6 +998,8 @@ export class MuallimService {
         classId: first.classId ? first.classId.toString() : "",
         term: `${monthName} ${yearNum}`,
         month: monthKey,
+        monthNumber: monthNum,
+        year: yearNum,
         scores: scoreItems,
         overallScore: overallPercentage,
         overallRemarks: remarksList.length > 0 ? remarksList.join(" | ") : "",
@@ -1005,7 +1007,7 @@ export class MuallimService {
           _id: (first.evaluatedById as any)._id?.toString() || first.evaluatedById.toString(),
           name: (first.evaluatedById as any).name || "Usthad",
         } : undefined,
-        date: first.date || new Date(yearNum, monthNum - 1, 1),
+        date: new Date(yearNum, monthNum - 1, 1),
       };
     });
 
@@ -1021,9 +1023,16 @@ export class MuallimService {
     const nonOverlappingLegacy = legacyEvaluations.filter((le) => !le.month || !modernMonthKeys.has(le.month));
 
     const allEvaluations = [...modernEvaluations, ...nonOverlappingLegacy].sort((a: any, b: any) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateB - dateA;
+      const getYearMonthKey = (item: any) => {
+        if (item.year && item.monthNumber) return item.year * 100 + item.monthNumber;
+        if (item.month && typeof item.month === "string" && item.month.includes("-")) {
+          const parts = item.month.split("-").map(Number);
+          if (parts[0] && parts[1]) return parts[0] * 100 + parts[1];
+        }
+        const d = item.date ? new Date(item.date) : new Date(0);
+        return d.getFullYear() * 100 + (d.getMonth() + 1);
+      };
+      return getYearMonthKey(b) - getYearMonthKey(a);
     });
 
     return allEvaluations;

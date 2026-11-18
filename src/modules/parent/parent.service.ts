@@ -5,6 +5,7 @@ import HifzTarget from "../../models/HifzTarget.js";
 import MonthlyAttendanceBacklog from "../../models/MonthlyAttendanceBacklog.js";
 import { AppError } from "../../utils/AppError.js";
 import { muallimService } from "../muallim/muallim.service.js";
+import { practicalScoreService } from "../practical/practicalScore.service.js";
 import { expandRangesToAyahs, parseAyahRangesFromProgress } from "../hifz/hifz.service.js";
 import type {
   ParentProfileDTO,
@@ -438,9 +439,10 @@ export class ParentService {
   ): Promise<ChildPracticalDTO> {
     const student: any = await this.verifyStudentAccess(parentId, studentId);
 
-    const [evaluations, report] = await Promise.all([
+    const [evaluations, report, monthlyScores] = await Promise.all([
       muallimService.getStudentEvaluations(student._id.toString()),
       muallimService.getStudentPracticalReport(student._id.toString()),
+      practicalScoreService.getStudentMonthlyHistory(student._id.toString()).catch(() => []),
     ]);
 
     return {
@@ -449,6 +451,7 @@ export class ParentService {
       className: student.classId?.name || "",
       report,
       evaluations,
+      monthlyScores: monthlyScores || [],
     };
   }
 

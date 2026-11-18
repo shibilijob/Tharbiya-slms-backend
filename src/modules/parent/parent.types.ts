@@ -99,6 +99,7 @@ export interface ChildPracticalDTO {
   className: string;
   report: StudentPracticalReport;
   evaluations: any[];
+  monthlyScores?: any[];
 }
 
 export interface ChildTimetableDTO {
